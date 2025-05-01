@@ -4,6 +4,8 @@
 #include <limits>
 #include <stdexcept> // For std::stoll exceptions
 #include <charconv> // For more modern string-to-int conversion (optional)
+#include <iomanip>
+
 
 // Function declarations
 void clearInputBuffer();
@@ -421,6 +423,102 @@ end_transfer:
     std::cin.get(); // Wait for user to press Enter
 }
 
+void handleViewHistory(AuthWalletSystem& system) {
+    std::cout << "\n--- Transaction History ---" << std::endl;
+
+    User* currentUser = system.getCurrentUser();
+    if (!currentUser) {
+        std::cerr << "Error: No user is currently logged in.\n";
+    }
+    std::string userWalletId = currentUser->getWalletId();
+
+    std::vector<TransactionRecord> history = system.getTransactionHistory(userWalletId);
+
+    if (!currentUser) {
+        std::cout << "Error: You must be logged in to view history." << std::endl;
+        goto end_history;
+    }
+
+    if (userWalletId.empty()) {
+        std::cout << "Error: Could not determine your wallet ID." << std::endl;
+        goto end_history;
+    }
+
+
+    if (history.empty()) {
+        std::cout << "No transaction history found for wallet " << userWalletId << "." << std::endl;
+    } else {
+        std::cout << "History for Wallet: " << userWalletId << std::endl;
+        std::cout << "--------------------------------------------------------------------------------------------------" << std::endl;
+        // Header - Adjust widths as needed
+        std::cout << std::left << std::setw(10) << "ID"
+                  << std::setw(22) << "Timestamp"
+                  << std::setw(18) << "Type"
+                  << std::setw(22) << "From / To"
+                  << std::right << std::setw(12) << "Amount"
+                  << " " << std::left << std::setw(15) << "Status" << std::endl;
+        std::cout << "--------------------------------------------------------------------------------------------------" << std::endl;
+
+        for (const auto& record : history) {
+             std::string type;
+             std::string otherParty;
+
+            if (record.fromWalletId == userWalletId) {
+                 type = "Sent";
+                 otherParty = "To: " + record.toWalletId;
+             } else if (record.toWalletId == userWalletId) {
+                 type = "Received";
+                 otherParty = "From: " + record.fromWalletId;
+             } else {
+                 // Should not happen based on query, but handle defensively
+                 type = "Unknown";
+                 otherParty = "From:" + record.fromWalletId + "/To:" + record.toWalletId;
+             }
+
+            std::cout << std::left << std::setw(10) << record.transactionId
+                      << std::setw(22) << record.timestamp // Assuming timestamp is reasonably formatted
+                      << std::setw(18) << type
+                      << std::setw(22) << otherParty
+                      << std::right << std::setw(12) << record.amount
+                      << " " << std::left << std::setw(15) << record.status << std::endl;
+        }
+        std::cout << "--------------------------------------------------------------------------------------------------" << std::endl;
+    }
+
+end_history:
+    std::cout << "\nPress Enter to return to the menu...";
+    if(std::cin.peek() == '\n') std::cin.ignore();
+    std::cin.get();
+}
+
+// Add this function somewhere near your other handlers
+void handleViewTransactions(AuthWalletSystem& system) {
+    User* user = system.getCurrentUser();
+    if (!user) {
+        std::cout << "User not logged in.\n";
+        return;
+    }
+    std::string walletId = user->getWalletId();
+    std::vector<TransactionRecord> history = system.getTransactionHistory(walletId);
+
+    std::cout << "\n=== Transaction History (UC-WALLET-02) ===\n";
+    if (history.empty()) {
+        std::cout << "No transactions found.\n";
+    } else {
+        std::cout << "ID   | Time                  | From         | To           | Amount | Status\n";
+        std::cout << "-----|-----------------------|--------------|--------------|--------|-------------\n";
+        for (const auto& tx : history) {
+            std::cout << tx.transactionId << " | "
+                      << tx.timestamp << " | "
+                      << (tx.fromWalletId.empty() ? "SYSTEM" : tx.fromWalletId) << " | "
+                      << tx.toWalletId << " | "
+                      << tx.amount << " | "
+                      << tx.status << '\n';
+        }
+    }
+    std::cout << "Press Enter to continue...";
+    std::cin.get();
+}
 
 // Menu shown after successful login
 void showLoggedInMenu(AuthWalletSystem& system) {
@@ -434,6 +532,7 @@ void showLoggedInMenu(AuthWalletSystem& system) {
         std::cout << "1. View Profile (UC-INFO-01)" << std::endl;
         std::cout << "2. View Balance (UC-WALLET-01)" << std::endl;
         std::cout << "3. Transfer Points (UC-WALLET-03)" << std::endl; // <-- Add menu option
+        std::cout << "4. View Transactions (UC-WALLET-02)" << std::endl; // <-- Added menu option
         // TODO: Add other options based on role
         // 4. View Transactions (UC-WALLET-02)
         // 5. Edit Profile (UC-INFO-02)
@@ -450,6 +549,8 @@ void showLoggedInMenu(AuthWalletSystem& system) {
             handleViewBalance(system);
         } else if (choice == "3") { // <-- Add case for transfer points
              handleTransferPoints(system);
+        } else if (choice == "4") {
+            handleViewTransactions(system); // <-- Handle transaction history viewing
         } else if (choice == "logout" || choice == "7") { // Check for logout input (updated number)
              std::cout << "Logging out..." << std::endl; 
              system.logout(); 

@@ -564,4 +564,58 @@ bool AuthWalletSystem::transferPoints(const std::string& senderWalletId, const s
     return success;
 }
 
-// ... rest of AuthWalletSystem.cpp ...
+#include "AuthWalletSystem.h"
+#include <sqlite3.h>
+#include <vector>
+#include <string>
+#include <iostream>
+
+std::vector<TransactionRecord> AuthWalletSystem::getTransactionHistory(const std::string& walletId) {
+    std::vector<TransactionRecord> records;
+    if (!db) {
+        std::cerr << "Database not connected.\n";
+        return records;
+    }
+
+    const char* sql =
+        "SELECT transaction_id, from_wallet_id, to_wallet_id, amount, status, transaction_timestamp "
+        "FROM Transactions "
+        "WHERE from_wallet_id = ?1 OR to_wallet_id = ?1 "
+        "ORDER BY transaction_timestamp DESC";
+
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to prepare SQL statement: " << sqlite3_errmsg(db) << std::endl;
+        return records;
+    }
+
+    sqlite3_bind_text(stmt, 1, walletId.c_str(), -1, SQLITE_STATIC);
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        int transactionId = sqlite3_column_int(stmt, 0);
+
+        const unsigned char* fromWalPtr = sqlite3_column_text(stmt, 1);
+        const unsigned char* toWalPtr = sqlite3_column_text(stmt, 2);
+
+        std::string fromWalletId = fromWalPtr ? reinterpret_cast<const char*>(fromWalPtr) : "";
+        std::string toWalletId = toWalPtr ? reinterpret_cast<const char*>(toWalPtr) : "";
+
+        long long amount = sqlite3_column_int64(stmt, 3);
+
+        const unsigned char* statusPtr = sqlite3_column_text(stmt, 4);
+        std::string status = statusPtr ? reinterpret_cast<const char*>(statusPtr) : "";
+
+        const unsigned char* tsPtr = sqlite3_column_text(stmt, 5);
+        std::string timestamp = tsPtr ? reinterpret_cast<const char*>(tsPtr) : "";
+
+        records.emplace_back(transactionId, fromWalletId, toWalletId, amount, status, timestamp);
+    }
+
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Error while reading transaction history: " << sqlite3_errmsg(db) << std::endl;
+    }
+
+    sqlite3_finalize(stmt);
+    return records;
+}

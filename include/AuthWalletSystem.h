@@ -3,6 +3,7 @@
 
 #include "models/User.h"
 #include "models/Wallet.h"
+#include "models/TransactionRecord.h" // <-- Include the new header
 #include <memory>
 #include <vector>
 #include <optional>
@@ -18,6 +19,7 @@ private:
     bool createWalletForUser(int userId, const std::string& walletId);
     bool usernameExists(const std::string& username);
     std::string generateUniqueWalletId(); 
+    bool logTransaction(const std::string& fromWallet, const std::string& toWallet, long long amount, const std::string& status); // <-- Added declaration for logging
 
 public:
     AuthWalletSystem();
@@ -38,7 +40,8 @@ public:
 
     // Wallet operations
     long long getWalletBalance(const std::string& walletId);
-    bool transferPoints(const std::string& senderWalletId, const std::string& recipientWalletId, long long amount); // <-- Add declaration
+    bool transferPoints(const std::string& senderWalletId, const std::string& recipientWalletId, long long amount); 
+    std::vector<TransactionRecord> getTransactionHistory(const std::string& walletId); // <-- Add history declaration
     std::vector<User> adminGetAllUsers();
 
     // Getters
