@@ -10,6 +10,13 @@
 #include "../include/utils/PasswordUtils.h"
 #include "../include/utils/UUIDGenerator.h" // <-- Add include for UUID generation
 
+// ... other includes and using directives ...
+
+// Include User model
+#include "../include/models/User.h" 
+// Include AuthWalletSystem header
+#include "../include/AuthWalletSystem.h" 
+
 // Remove the free function declaration if it exists here:
 // std::string generateUniqueWalletId(); // <-- REMOVE THIS LINE
 
@@ -133,6 +140,101 @@ bool AuthWalletSystem::isDbConnected() const {
 }
 
 // --- Make sure registerUser calls the member function ---
+void AuthWalletSystem::logout() {
+    if (currentUser) {
+        std::cout << "Logging out user: " << currentUser->getUsername() << std::endl;
+        currentUser.reset(); // Reset the unique_ptr to release the user object
+    } else {
+        std::cout << "No user currently logged in." << std::endl;
+    }
+}
+
+bool AuthWalletSystem::login(const std::string& username, const std::string& password) {
+    if (!db) {
+        std::cerr << "Database connection not established!" << std::endl;
+        return false;
+    }
+
+    // Prepare SQL statement to retrieve user data
+    const char* sql = "SELECT user_id, username, hashed_password, salt, full_name, contact_info, "
+                     "role, password_status FROM Users WHERE username = ?";
+    
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        return false;
+    }
+    
+    // Bind the username parameter
+    if (sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_STATIC) != SQLITE_OK) {
+        std::cerr << "Failed to bind username parameter: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt);
+        return false;
+    }
+    
+    bool loginSuccess = false;
+    
+    // Execute the query and process the result
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        int userId = sqlite3_column_int(stmt, 0);
+        std::string dbUsername = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        std::string hashedPassword = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        std::string salt = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        std::string fullName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        std::string contactInfo = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+        
+        std::string roleStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+        UserRole role = (roleStr == "ADMIN") ? UserRole::ADMIN : UserRole::USER;
+        
+        std::string pwdStatusStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+        PasswordStatus pwdStatus = (pwdStatusStr == "AUTO_GENERATED") ? PasswordStatus::AUTO_GENERATED : PasswordStatus::USER_SET;
+        
+        // Get wallet ID for the user
+        std::string walletId;
+        sqlite3_stmt* walletStmt;
+        const char* walletSql = "SELECT wallet_id FROM Wallets WHERE user_id = ?";
+        
+        if (sqlite3_prepare_v2(db, walletSql, -1, &walletStmt, nullptr) == SQLITE_OK) {
+            if (sqlite3_bind_int(walletStmt, 1, userId) == SQLITE_OK) {
+                if (sqlite3_step(walletStmt) == SQLITE_ROW) {
+                    walletId = reinterpret_cast<const char*>(sqlite3_column_text(walletStmt, 0));
+                }
+            }
+            sqlite3_finalize(walletStmt);
+        }
+        
+        // Create a new User object with retrieved data
+        auto user = std::make_unique<User>(userId, dbUsername, hashedPassword, salt, 
+                                          fullName, contactInfo, role, walletId, pwdStatus);
+        
+        // Verify password using PasswordUtils
+        #include "utils/PasswordUtils.h"
+        
+        // Compare the password with stored hash
+        if (PasswordUtils::verifyPassword(password, hashedPassword, salt)) {
+            // Password is correct, set the current user
+            currentUser = std::move(user);
+            loginSuccess = true;
+        }
+    }
+    
+    sqlite3_finalize(stmt);
+    
+    // Check if user needs to change password
+    if (loginSuccess && currentUser && currentUser->getPasswordStatus() == PasswordStatus::AUTO_GENERATED) {
+        std::cout << "Login successful, but you need to change your auto-generated password." << std::endl;
+        // Notify caller that password change is required
+        // This would typically set a flag or return a specific code to indicate
+        // the system should redirect to UC-AUTH-05 (password change)
+    } else if (loginSuccess) {
+        std::cout << "Login successful!" << std::endl;
+    } else {
+        std::cout << "Invalid username or password." << std::endl;
+    }
+    
+    return loginSuccess;
+}
+
 bool AuthWalletSystem::registerUser(const std::string& username, const std::string& password,
                                    const std::string& fullName, const std::string& contactInfo)
 {
@@ -296,4 +398,11 @@ bool AuthWalletSystem::registerUser(const std::string& username, const std::stri
         std::cout << "\n*** Dang ky tai khoan THAT BAI! ***\n";
         return false;
     }
+}
+
+// ... Other method implementations ...
+
+// Getters
+User* AuthWalletSystem::getCurrentUser() const {
+    return currentUser.get(); // Return the raw pointer from the unique_ptr
 }

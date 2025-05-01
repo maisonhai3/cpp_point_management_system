@@ -42,6 +42,11 @@ public:
 
     // Getters
     User* getCurrentUser() const;
+    
+    // Check if password change is required
+    bool isPasswordChangeRequired() const {
+        return currentUser && currentUser->getPasswordStatus() == PasswordStatus::AUTO_GENERATED;
+    }
 };
 
 #endif // AUTH_WALLET_SYSTEM_H

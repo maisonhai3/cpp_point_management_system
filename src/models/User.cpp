@@ -43,10 +43,11 @@ void User::setHashAndSalt(const std::string& hash, const std::string& salt) {
     this->salt = salt;
 }
 
+#include "utils/PasswordUtils.h"
+
 bool User::checkPassword(const std::string& password) const {
-    // This is a placeholder. Actual implementation requires hashing the password with the salt
-    // and comparing it to the stored hash.
-    return false;
+    // Use the PasswordUtils to verify the password
+    return PasswordUtils::verifyPassword(password, hashedPassword, salt);
 }
 
 bool User::changePassword(const std::string& oldPwd, const std::string& newPwd) {

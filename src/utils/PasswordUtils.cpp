@@ -70,9 +70,9 @@ std::string hashPassword(const std::string& password, const std::string& salt) {
     return ss.str();
 }
 
-bool verifyPassword(const std::string& providedPassword, const std::string& salt, const std::string& storedHash) {
-    std::string newlyHashedPassword = hashPassword(providedPassword, salt);
-    return newlyHashedPassword == storedHash;
+bool verifyPassword(const std::string& password, const std::string& hash, const std::string& salt) {
+    std::string newlyHashedPassword = hashPassword(password, salt);
+    return newlyHashedPassword == hash;
 }
 
 } // namespace PasswordUtils
