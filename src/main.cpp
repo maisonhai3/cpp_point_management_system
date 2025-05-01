@@ -179,15 +179,17 @@ void handleLogin(AuthWalletSystem& system) {
         
         // Check if password change is required (auto-generated password) UC-AUTH-03 Luồng phụ
         if (system.isPasswordChangeRequired()) {
-            std::cout << "\n*** Important: You must change your auto-generated password before proceeding. ***" << std::endl;
+            std::cout << "\n*** SECURITY NOTICE: Your account was created with a temporary password ***" << std::endl;
+            std::cout << "You must change your password before continuing to use the system." << std::endl;
             handlePasswordChange(system, true); // true indicates forced password change (UC-AUTH-05)
+            
             // Check if password was actually changed (or user potentially quit)
             if (!system.getCurrentUser() || system.isPasswordChangeRequired()) {
                  std::cout << "Password change was required but not completed. Logging out." << std::endl;
                  if(system.getCurrentUser()) system.logout(); // Ensure logout if still technically logged in
                  return; // Return to main menu
             }
-            std::cout << "Password changed successfully." << std::endl;
+            std::cout << "Thank you for updating your password. Proceeding to the main menu..." << std::endl;
         }
         
         // Proceed to the logged-in user menu
@@ -203,26 +205,31 @@ void handleLogin(AuthWalletSystem& system) {
 
 // Function to handle password change (UC-AUTH-05, UC-AUTH-06)
 void handlePasswordChange(AuthWalletSystem& system, bool forcedChange) {
-     std::cout << "\n=== " << (forcedChange ? "Required " : "") << "Password Change ===" << std::endl;
+    std::cout << "\n=== " << (forcedChange ? "Required " : "") << "Password Change ===" << std::endl;
+    
+    if (forcedChange) {
+        std::cout << "Your account was created with an auto-generated password that must be changed now." << std::endl;
+        std::cout << "Please choose a strong password that you can remember." << std::endl;
+    }
      
-     if (!system.getCurrentUser()) {
-         std::cout << "Error: No user logged in." << std::endl;
-         return;
-     }
+    if (!system.getCurrentUser()) {
+        std::cout << "Error: No user logged in." << std::endl;
+        return;
+    }
 
     std::string oldPassword = ""; // Not needed for forced change
     std::string newPassword, confirmNewPassword;
 
     if (!forcedChange) {
-         // For UC-AUTH-06, ask for the old password first
-         std::cout << "Enter current password: ";
-         std::getline(std::cin, oldPassword);
+        // For UC-AUTH-06, ask for the old password first
+        std::cout << "Enter current password: ";
+        std::getline(std::cin, oldPassword);
          
-         // Verify old password is correct
-         if (!system.getCurrentUser()->checkPassword(oldPassword)) {
-             std::cout << "Incorrect current password. Password change aborted." << std::endl;
-             return;
-         }
+        // Verify old password is correct
+        if (!system.getCurrentUser()->checkPassword(oldPassword)) {
+            std::cout << "Incorrect current password. Password change aborted." << std::endl;
+            return;
+        }
     }
 
     while (true) {
@@ -233,11 +240,24 @@ void handlePasswordChange(AuthWalletSystem& system, bool forcedChange) {
             std::cout << "Password cannot be empty. Please try again." << std::endl;
             continue;
         }
+        
         if (newPassword.length() < 6) {
             std::cout << "Password must be at least 6 characters long. Please try again." << std::endl;
             continue;
         }
-         // In a real scenario, add more complexity checks here
+        
+        // Add more password complexity checks
+        bool hasUppercase = false, hasLowercase = false, hasDigit = false;
+        for (char c : newPassword) {
+            if (std::isupper(c)) hasUppercase = true;
+            if (std::islower(c)) hasLowercase = true;
+            if (std::isdigit(c)) hasDigit = true;
+        }
+        
+        if (forcedChange && (!hasUppercase || !hasLowercase || !hasDigit)) {
+            std::cout << "Password must contain at least one uppercase letter, one lowercase letter, and one number." << std::endl;
+            continue;
+        }
 
         std::cout << "Confirm new password: ";
         std::getline(std::cin, confirmNewPassword);
@@ -249,23 +269,23 @@ void handlePasswordChange(AuthWalletSystem& system, bool forcedChange) {
         break; // Passwords match and meet basic criteria
     }
 
-     // Call the system to change the password
-     bool success = system.changePassword(*system.getCurrentUser(), oldPassword, newPassword);
+    // Call the system to change the password
+    bool success = system.changePassword(*system.getCurrentUser(), oldPassword, newPassword);
      
-     if (success) {
+    if (success) {
         std::cout << "Password changed successfully." << std::endl;
         if (forcedChange && system.getCurrentUser()) {
-             // The password status should already be updated by the changePassword method,
-             // but we'll ensure it's set correctly here as a backup
-             system.getCurrentUser()->setPasswordStatus(PasswordStatus::USER_SET);
+            // The password status should already be updated by the changePassword method,
+            // but we'll ensure it's set correctly here as a backup
+            system.getCurrentUser()->setPasswordStatus(PasswordStatus::USER_SET);
         }
-     } else {
-         std::cout << "Password change failed." << (forcedChange ? " Logging out." : "") << std::endl;
-         // If forced change fails, we should probably log the user out.
-         if (forcedChange && system.getCurrentUser()) {
-             system.logout();
-         }
-     }
+    } else {
+        std::cout << "Password change failed." << (forcedChange ? " Logging out." : "") << std::endl;
+        // If forced change fails, we should probably log the user out.
+        if (forcedChange && system.getCurrentUser()) {
+            system.logout();
+        }
+    }
 }
 
 // Function to handle viewing user profile (UC-INFO-01)
