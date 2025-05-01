@@ -71,13 +71,16 @@ std::string AuthWalletSystem::generateUniqueWalletId() {
 AuthWalletSystem::AuthWalletSystem() : db(nullptr), currentUser(nullptr) {
     std::cout << "Initializing AuthWalletSystem..." << std::endl;
 
-    // Mở kết nối CSDL SQLite
-    // Thay "wallet_app.db" bằng đường dẫn thực tế nếu cần
-    int rc = sqlite3_open("wallet_app.db", &db);
+    // Define the database path as a constant
+    const char* dbPath = "../database/wallet_app.db";
+
+    // Mở kết nối CSDL SQLite using the constant
+    int rc = sqlite3_open(dbPath, &db);
 
     if (rc != SQLITE_OK) {
         // Nếu mở lỗi, db sẽ là nullptr hoặc chứa thông tin lỗi
-        std::cerr << "ERROR: Cannot open database: " << sqlite3_errmsg(db) << std::endl;
+        // Use the constant in the error message
+        std::cerr << "ERROR: Cannot open database '" << dbPath << "': " << sqlite3_errmsg(db) << std::endl;
         // db có thể vẫn cần được close nếu lỗi xảy ra sau khi cấp phát một phần
         if (db) {
            sqlite3_close(db); // Cố gắng đóng
@@ -86,7 +89,8 @@ AuthWalletSystem::AuthWalletSystem() : db(nullptr), currentUser(nullptr) {
         // Bạn có thể muốn ném một ngoại lệ ở đây để báo hiệu lỗi khởi tạo nghiêm trọng
         // throw std::runtime_error("Failed to open database");
     } else {
-        std::cout << "Database opened successfully: wallet_app.db" << std::endl;
+        // Use the constant in the success message
+        std::cout << "Database opened successfully: " << dbPath << std::endl;
 
         // Bật kiểm tra khóa ngoại (QUAN TRỌNG!)
         char* errMsg = nullptr;
