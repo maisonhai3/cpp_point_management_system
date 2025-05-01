@@ -12,32 +12,29 @@ We provide a secure point management system with user, wallet, and transaction m
 ## Prerequisites
 - C++17 compiler (GCC or Clang)
 - CMake 3.10+
-- PostgreSQL 12+
-- libpq (PostgreSQL C client library)
+- SQLite3 library
 - OpenSSL
 - UUID library
 
 ## Database Setup
-1. Install PostgreSQL if not already installed.
-2. Create a new database:
-   ```sh
-   sudo -u postgres psql
-   CREATE DATABASE point_management_system;
-   \c point_management_system
-   ```
-3. Apply the schema from `database_schemas/schema.sql`:
-   ```sh
-   sudo -u postgres psql -d point_management_system -f database_schemas/schema.sql
-   ```
+The application will automatically create an SQLite database file in the `data` directory when it's first run. No manual setup is required.
+
+The database schema will be automatically created with tables for:
+- Users
+- Wallets
+- Transactions
 
 ## How to build and run this project
 1. Install required libraries:
    ```sh
    # Ubuntu/Debian
-   sudo apt-get install libpq-dev libssl-dev uuid-dev
+   sudo apt-get install libsqlite3-dev libssl-dev uuid-dev
    
    # macOS (with Homebrew)
-   brew install postgresql openssl ossp-uuid
+   brew install sqlite openssl ossp-uuid
+   
+   # Windows (with vcpkg)
+   vcpkg install sqlite3 openssl libuuid
    ```
 
 2. Build the project:
@@ -58,9 +55,12 @@ We provide a secure point management system with user, wallet, and transaction m
   - `utils/` - Utility functions (password hashing, UUID generation)
   - `database/` - Database connection and operations
 - `include/` - Header files
-- `database_schemas/` - Database schema
+- `data/` - Contains the SQLite database file (created automatically)
 - `docs/` - Documentation including use cases and class diagrams
 
-## Configuration
-Update the database connection settings in `src/main.cpp` to match your PostgreSQL setup:
+## Database Location
+The application creates and uses an SQLite database file at `data/point_management.db`. This file will be created automatically when the program is first run. You can directly examine the database using the SQLite command line tool:
+
+```sh
+sqlite3 data/point_management.db
 
