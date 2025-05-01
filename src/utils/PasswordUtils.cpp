@@ -1,53 +1,78 @@
-#include "utils/PasswordUtils.h"
-#include <openssl/sha.h>
+#include "../../include/utils/PasswordUtils.h"
+#include <openssl/evp.h> // Use EVP API
 #include <openssl/rand.h>
 #include <sstream>
 #include <iomanip>
-#include <vector>
+#include <stdexcept> // For exceptions
 
 namespace PasswordUtils {
 
 std::string generateSalt(size_t length) {
-    std::vector<unsigned char> buffer(length);
-    RAND_bytes(buffer.data(), length);
-    
-    std::stringstream ss;
-    for (auto& byte : buffer) {
-        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+    unsigned char buffer[length];
+    if (RAND_bytes(buffer, sizeof(buffer)) != 1) {
+        // Handle error - RAND_bytes failed
+        // For simplicity, throwing an exception here. Proper error handling needed.
+        throw std::runtime_error("Failed to generate random bytes for salt");
     }
     
-    return ss.str();
+    std::stringstream ss;
+    ss << std::hex << std::setfill('0');
+    for (size_t i = 0; i < length; ++i) {
+        ss << std::setw(2) << static_cast<unsigned int>(buffer[i]);
+    }
+    return ss.str().substr(0, length * 2); // Return hex string
 }
 
 std::string hashPassword(const std::string& password, const std::string& salt) {
-    // Combine password and salt
     std::string combined = password + salt;
-    
-    // Hash using SHA-256
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256_CTX sha256;
-    SHA256_Init(&sha256);
-    SHA256_Update(&sha256, combined.c_str(), combined.size());
-    SHA256_Final(hash, &sha256);
-    
-    // Convert to hex string
-    std::stringstream ss;
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
+    unsigned char hash[EVP_MAX_MD_SIZE]; // Buffer for the hash
+    unsigned int hash_len = 0;
+
+    // Get the EVP_MD structure for SHA256
+    const EVP_MD* md = EVP_sha256();
+    if (md == NULL) {
+        throw std::runtime_error("Failed to get SHA256 message digest");
     }
-    
+
+    // Create and initialize the context
+    EVP_MD_CTX* mdctx = EVP_MD_CTX_new();
+    if (mdctx == NULL) {
+        throw std::runtime_error("Failed to create EVP_MD_CTX");
+    }
+
+    // Initialize the digest operation
+    if (EVP_DigestInit_ex(mdctx, md, NULL) != 1) {
+         EVP_MD_CTX_free(mdctx);
+         throw std::runtime_error("Failed to initialize digest");
+    }
+
+    // Provide the message to be hashed
+    if (EVP_DigestUpdate(mdctx, combined.c_str(), combined.size()) != 1) {
+        EVP_MD_CTX_free(mdctx);
+        throw std::runtime_error("Failed to update digest");
+    }
+
+    // Finalize the hash
+    if (EVP_DigestFinal_ex(mdctx, hash, &hash_len) != 1) {
+        EVP_MD_CTX_free(mdctx);
+        throw std::runtime_error("Failed to finalize digest");
+    }
+
+    // Clean up the context
+    EVP_MD_CTX_free(mdctx);
+
+    // Convert the binary hash to a hexadecimal string
+    std::stringstream ss;
+    ss << std::hex << std::setfill('0');
+    for (unsigned int i = 0; i < hash_len; ++i) {
+        ss << std::setw(2) << static_cast<unsigned int>(hash[i]);
+    }
     return ss.str();
 }
 
-std::tuple<std::string, std::string> hashAndSalt(const std::string& password) {
-    std::string salt = generateSalt();
-    std::string hash = hashPassword(password, salt);
-    return std::make_tuple(hash, salt);
-}
-
-bool verifyPassword(const std::string& password, const std::string& hash, const std::string& salt) {
-    std::string computedHash = hashPassword(password, salt);
-    return computedHash == hash;
+bool verifyPassword(const std::string& providedPassword, const std::string& salt, const std::string& storedHash) {
+    std::string newlyHashedPassword = hashPassword(providedPassword, salt);
+    return newlyHashedPassword == storedHash;
 }
 
 } // namespace PasswordUtils

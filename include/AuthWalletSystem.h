@@ -1,7 +1,6 @@
 #ifndef AUTH_WALLET_SYSTEM_H
 #define AUTH_WALLET_SYSTEM_H
 
-#include "database/DBConnection.h"
 #include "models/User.h"
 #include "models/Wallet.h"
 #include <memory>
@@ -11,8 +10,7 @@
 class AuthWalletSystem {
 private:
     std::unique_ptr<User> currentUser;
-    std::unique_ptr<DBConnection> dbConnection;
-    
+
     // Internal utility methods
     bool createUserInDB(const User& user, const std::string& hashedPassword, const std::string& salt);
     bool createWalletForUser(int userId, const std::string& walletId);
@@ -23,7 +21,7 @@ public:
     ~AuthWalletSystem();
     
     // Database connection
-    bool initializeDB(const std::string& connString);
+    // bool initializeDB(const std::string& connString);
     
     // User registration and authentication
     bool registerUser(const std::string& username, const std::string& password, 

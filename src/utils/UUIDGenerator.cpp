@@ -1,4 +1,4 @@
-#include "utils/UUIDGenerator.h"
+#include "../../include/utils/UUIDGenerator.h"
 #include <uuid/uuid.h>
 
 namespace UUIDGenerator {

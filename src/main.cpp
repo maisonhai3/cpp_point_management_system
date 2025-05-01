@@ -146,14 +146,7 @@ void handleRegistration(AuthWalletSystem& system) {
 int main() {
     // Create an instance of the AuthWalletSystem
     AuthWalletSystem system;
-    
-    // Initialize the database connection
-    std::string dbConnString = "host=localhost port=5432 dbname=point_management_system user=postgres password=postgres";
-    if (!system.initializeDB(dbConnString)) {
-        std::cerr << "Failed to connect to the database. Please check your connection settings." << std::endl;
-        return 1;
-    }
-    
+
     std::string choice;
     bool running = true;
     
