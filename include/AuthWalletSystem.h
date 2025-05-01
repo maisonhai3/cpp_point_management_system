@@ -17,7 +17,7 @@ private:
     bool createUserInDB(const User& user, const std::string& hashedPassword, const std::string& salt);
     bool createWalletForUser(int userId, const std::string& walletId);
     bool usernameExists(const std::string& username);
-    std::string generateUniqueWalletId(); // <-- Declaration moved here
+    std::string generateUniqueWalletId(); 
 
 public:
     AuthWalletSystem();
@@ -38,6 +38,7 @@ public:
 
     // Wallet operations
     long long getWalletBalance(const std::string& walletId);
+    bool transferPoints(const std::string& senderWalletId, const std::string& recipientWalletId, long long amount); // <-- Add declaration
     std::vector<User> adminGetAllUsers();
 
     // Getters

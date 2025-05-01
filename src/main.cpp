@@ -1,7 +1,9 @@
 #include "../include/AuthWalletSystem.h"
 #include <iostream>
 #include <string>
-#include <limits> // Required for numeric_limits
+#include <limits>
+#include <stdexcept> // For std::stoll exceptions
+#include <charconv> // For more modern string-to-int conversion (optional)
 
 // Function declarations
 void clearInputBuffer();
@@ -15,6 +17,7 @@ void handlePasswordChange(AuthWalletSystem& system, bool forcedChange = false);
 void showLoggedInMenu(AuthWalletSystem& system);
 void handleViewProfile(AuthWalletSystem& system);
 void handleViewBalance(AuthWalletSystem& system); // <-- Add prototype
+void handleTransferPoints(AuthWalletSystem& system); // <-- Add prototype
 
 // Function to clear input buffer
 void clearInputBuffer() {
@@ -330,6 +333,94 @@ void handleViewBalance(AuthWalletSystem& system) {
     std::cin.get(); // Wait for user to press Enter
 }
 
+// Function to handle transferring points (UC-WALLET-03)
+void handleTransferPoints(AuthWalletSystem& system) {
+    std::cout << "\n--- Transfer Points ---" << std::endl;
+
+    // Declare variables at the top of the scope
+    User* currentUser = system.getCurrentUser();
+    std::string senderWalletId = ""; // Initialize senderWalletId
+    std::string recipientWalletId = ""; // Initialize recipientWalletId
+    long long amount = 0; // Initialize amount
+
+    if (!currentUser) {
+        std::cout << "Error: You must be logged in to transfer points." << std::endl;
+        goto end_transfer; // Jump is now okay as declarations are above
+    }
+
+    // Assign senderWalletId after checking currentUser
+    senderWalletId = currentUser->getWalletId();
+    if (senderWalletId.empty()) {
+        std::cout << "Error: Could not determine your wallet ID." << std::endl;
+        goto end_transfer; // Jump is okay
+    }
+
+    // Get Recipient Wallet ID
+    while (true) {
+        std::cout << "Enter recipient's wallet ID: ";
+        std::getline(std::cin, recipientWalletId);
+        if (recipientWalletId.empty()) {
+            std::cout << "Recipient wallet ID cannot be empty. Please try again." << std::endl;
+        } else if (recipientWalletId == senderWalletId) {
+             std::cout << "You cannot transfer points to your own wallet. Please enter a different ID." << std::endl;
+        }
+         else {
+            break; // Valid input
+        }
+    }
+
+    // Get Amount
+    while (true) {
+        std::cout << "Enter amount to transfer (positive integer): ";
+        std::string amountStr;
+        std::getline(std::cin, amountStr);
+
+        try {
+            size_t processedChars = 0;
+            amount = std::stoll(amountStr, &processedChars); // Use stoll for long long
+
+            // Check if the entire string was processed and the amount is positive
+            if (processedChars != amountStr.length() || amount <= 0) {
+                 std::cout << "Invalid input. Please enter a positive whole number." << std::endl;
+            } else {
+                 break; // Valid positive amount
+            }
+        } catch (const std::invalid_argument& e) {
+            std::cout << "Invalid input. Please enter a number." << std::endl;
+        } catch (const std::out_of_range& e) {
+            std::cout << "Input out of range for a valid amount." << std::endl;
+        }
+    }
+
+    // --- Placeholder for getting OTP from user ---
+    // std::cout << "Enter OTP received: ";
+    // std::string otp;
+    // std::getline(std::cin, otp);
+    // --- End OTP Placeholder ---
+
+
+    std::cout << "\nProcessing transfer..." << std::endl;
+    // Call the system function to perform the transfer
+    if (system.transferPoints(senderWalletId, recipientWalletId, amount)) {
+        std::cout << "Transfer successful! " << amount << " points transferred to wallet " << recipientWalletId << "." << std::endl;
+        // Optionally, display the new balance
+        long long newBalance = system.getWalletBalance(senderWalletId);
+        if (newBalance >= 0) {
+            std::cout << "Your new balance: " << newBalance << " points." << std::endl;
+        }
+    } else {
+        std::cout << "Transfer failed. Please check the details and your balance." << std::endl;
+        // Specific error messages should have been printed by transferPoints()
+    }
+
+// Label for the common exit point
+end_transfer:
+    std::cout << "\nPress Enter to return to the menu...";
+    // Clear potential leftover newline before waiting for Enter
+    if(std::cin.peek() == '\n') std::cin.ignore();
+    std::cin.get(); // Wait for user to press Enter
+}
+
 
 // Menu shown after successful login
 void showLoggedInMenu(AuthWalletSystem& system) {
@@ -341,13 +432,13 @@ void showLoggedInMenu(AuthWalletSystem& system) {
         std::cout << "Welcome, " << system.getCurrentUser()->getFullName() << "!" << std::endl;
         std::cout << "----------------------" << std::endl;
         std::cout << "1. View Profile (UC-INFO-01)" << std::endl;
-        std::cout << "2. View Balance (UC-WALLET-01)" << std::endl; // <-- Add menu option
+        std::cout << "2. View Balance (UC-WALLET-01)" << std::endl;
+        std::cout << "3. Transfer Points (UC-WALLET-03)" << std::endl; // <-- Add menu option
         // TODO: Add other options based on role
-        // 3. View Transactions (UC-WALLET-02)
-        // 4. Transfer Points (UC-WALLET-03)
+        // 4. View Transactions (UC-WALLET-02)
         // 5. Edit Profile (UC-INFO-02)
         // 6. Change Password (UC-AUTH-06)
-        std::cout << "7. Logout (UC-AUTH-04)" << std::endl; // <-- Keep logout option
+        std::cout << "7. Logout (UC-AUTH-04)" << std::endl; // <-- Renumber logout
         std::cout << "----------------------" << std::endl;
         std::cout << "Enter your choice (or type 'logout'): ";
         
@@ -355,23 +446,25 @@ void showLoggedInMenu(AuthWalletSystem& system) {
 
         if (choice == "1") {
             handleViewProfile(system);
-        } else if (choice == "2") { // <-- Add case for new option
+        } else if (choice == "2") { 
             handleViewBalance(system);
-        } else if (choice == "logout" || choice == "7") { // Check for logout input
+        } else if (choice == "3") { // <-- Add case for transfer points
+             handleTransferPoints(system);
+        } else if (choice == "logout" || choice == "7") { // Check for logout input (updated number)
              std::cout << "Logging out..." << std::endl; 
-             system.logout(); // Call the implemented logout method which clears currentUser
-             loggedIn = false; // Set flag to exit this menu loop
+             system.logout(); 
+             loggedIn = false; 
         } 
         // TODO: Add cases for other menu options here
         /* Example structure:
         else if (choice == "6") {
-            handlePasswordChange(system, false); // Not forced change
+            handlePasswordChange(system, false); 
         } 
         */
          else {
              std::cout << "Invalid choice. Please try again." << std::endl;
              std::cout << "Press Enter to continue...";
-             std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear buffer if needed
+             if(std::cin.peek() == '\n') std::cin.ignore(); // Clear buffer if needed
              std::cin.get(); 
          }
 
@@ -379,46 +472,37 @@ void showLoggedInMenu(AuthWalletSystem& system) {
         if (loggedIn) {
             // system("clear"); // or cls
         }
-    } // End of while(loggedIn && system.getCurrentUser()) loop
-     std::cout << "Returning to main menu." << std::endl; // This executes after logout
+    } 
+     std::cout << "Returning to main menu." << std::endl; 
 }
-
 
 // Main function
 int main() {
-    // Create an instance of the AuthWalletSystem
-    AuthWalletSystem system;
+   // ... (rest of main function remains the same) ...
+   AuthWalletSystem system;
     if (!system.isDbConnected()) {
         std::cerr << "FATAL ERROR: Could not connect to the database. Exiting." << std::endl;
-        return 1; // Exit with an error code if DB connection fails
+        return 1; 
     }
 
     std::string choice;
     bool running = true;
     
-    while (running) {
-        // Clear screen (optional, platform-dependent)
-        // system("clear"); // Linux/macOS
-        // system("cls"); // Windows
-        
+    while (running) {        
         displayWelcome();
         std::getline(std::cin, choice);
         
         if (choice == "1") {
-            // Register
             handleRegistration(system);
         } else if (choice == "2") {
-            // Login - This will call showLoggedInMenu if successful
-            handleLogin(system); // Calls showLoggedInMenu if successful
+            handleLogin(system); 
         } else if (choice == "3") {
-            // Exit
             std::cout << "Exiting the system. Goodbye!" << std::endl;
             running = false;
         } else {
             std::cout << "Invalid choice. Please try again." << std::endl;
         }
         
-         // Add a small pause or clear screen before showing the menu again, unless exiting
         if (running) {
              std::cout << "\nPress Enter to return to the main menu...";
              // Handle potential leftover newline depending on previous input function

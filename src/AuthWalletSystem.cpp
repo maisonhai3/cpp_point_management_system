@@ -1,12 +1,14 @@
-#include "AuthWalletSystem.h" // Include header của lớp
+#include "../include/AuthWalletSystem.h"
 #include <iostream>
+#include <sqlite3.h>
+#include <string> // Required for std::to_string
+#include "AuthWalletSystem.h" // Include header của lớp
 #include <string>
 #include <vector>
 #include <functional>
 #include <random>
 #include <chrono>
 #include <algorithm>
-#include <sqlite3.h> // Make sure this is included (likely via AuthWalletSystem.h)
 #include "../include/utils/PasswordUtils.h"
 #include "../include/utils/UUIDGenerator.h" // <-- Add include for UUID generation
 
@@ -442,4 +444,124 @@ long long AuthWalletSystem::getWalletBalance(const std::string& walletId) {
     return balance;
 }
 
-// ... adminGetAllUsers, getCurrentUser, isPasswordChangeRequired, etc. ...
+// Function to execute simple SQL commands like BEGIN, COMMIT, ROLLBACK
+bool executeSimpleSQL(sqlite3* db, const char* sql) {
+    char* errMsg = nullptr;
+    if (sqlite3_exec(db, sql, nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        std::cerr << "SQL error (" << sql << "): " << errMsg << std::endl;
+        sqlite3_free(errMsg);
+        return false;
+    }
+    return true;
+}
+
+
+bool AuthWalletSystem::transferPoints(const std::string& senderWalletId, const std::string& recipientWalletId, long long amount) {
+    if (!db) {
+        std::cerr << "Error: Database not connected." << std::endl;
+        return false;
+    }
+    if (senderWalletId == recipientWalletId) {
+        std::cerr << "Error: Sender and recipient wallet IDs cannot be the same." << std::endl;
+        return false;
+    }
+    if (amount <= 0) {
+        std::cerr << "Error: Transfer amount must be positive." << std::endl;
+        return false;
+    }
+
+    // --- Begin Transaction ---
+    if (!executeSimpleSQL(db, "BEGIN TRANSACTION;")) {
+        return false;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    bool success = false; // Assume failure initially
+
+    // 1. Check sender balance
+    long long senderBalance = getWalletBalance(senderWalletId); // Use existing function
+    if (senderBalance < amount) {
+        std::cerr << "Error: Insufficient balance. Available: " << senderBalance << ", Required: " << amount << std::endl;
+        executeSimpleSQL(db, "ROLLBACK;"); // Rollback transaction
+        return false;
+    }
+
+    // 2. Check if recipient wallet exists (implicitly check by trying to get balance)
+    long long recipientBalanceCheck = getWalletBalance(recipientWalletId);
+     if (recipientBalanceCheck < 0) { // getWalletBalance returns -1 if not found or error
+         std::cerr << "Error: Recipient wallet ID '" << recipientWalletId << "' not found or error checking balance." << std::endl;
+         executeSimpleSQL(db, "ROLLBACK;");
+         return false;
+     }
+
+
+    // --- Placeholder for OTP Verification (UC-AUTH-07) ---
+    // std::cout << "Please enter the OTP sent to your contact info: ";
+    // std::string otp;
+    // std::getline(std::cin, otp);
+    // if (!verifyOTP(currentUser->getContactInfo(), otp)) { // Assuming verifyOTP exists
+    //      std::cerr << "Error: Invalid OTP." << std::endl;
+    //      executeSimpleSQL(db, "ROLLBACK;");
+    //      return false;
+    // }
+    // --- End OTP Placeholder ---
+
+
+    // 3. Debit sender
+    const char* debitSql = "UPDATE Wallets SET balance = balance - ? WHERE wallet_id = ?;";
+    if (sqlite3_prepare_v2(db, debitSql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Failed to prepare debit statement: " << sqlite3_errmsg(db) << std::endl;
+        executeSimpleSQL(db, "ROLLBACK;");
+        return false;
+    }
+    sqlite3_bind_int64(stmt, 1, amount);
+    sqlite3_bind_text(stmt, 2, senderWalletId.c_str(), -1, SQLITE_STATIC);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "Failed to execute debit: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt);
+        executeSimpleSQL(db, "ROLLBACK;");
+        return false;
+    }
+    sqlite3_finalize(stmt); // Finalize debit statement
+
+
+    // 4. Credit recipient
+    const char* creditSql = "UPDATE Wallets SET balance = balance + ? WHERE wallet_id = ?;";
+     if (sqlite3_prepare_v2(db, creditSql, -1, &stmt, nullptr) != SQLITE_OK) {
+         std::cerr << "Failed to prepare credit statement: " << sqlite3_errmsg(db) << std::endl;
+         // Important: Rollback before returning if debit succeeded but credit prepare failed
+         executeSimpleSQL(db, "ROLLBACK;"); 
+         return false;
+     }
+     sqlite3_bind_int64(stmt, 1, amount);
+     sqlite3_bind_text(stmt, 2, recipientWalletId.c_str(), -1, SQLITE_STATIC);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "Failed to execute credit: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt);
+        executeSimpleSQL(db, "ROLLBACK;"); // Rollback if credit execution fails
+        return false;
+    }
+    sqlite3_finalize(stmt); // Finalize credit statement
+
+
+    // --- Placeholder for Transaction Logging (UC-WALLET-02 / UC-SYS-05) ---
+    // bool logSuccess = logTransaction(senderWalletId, recipientWalletId, amount, "COMPLETED");
+    // if (!logSuccess) {
+    //      std::cerr << "CRITICAL ERROR: Transaction completed but failed to log! Manual intervention required." << std::endl;
+    //      // Decide on rollback strategy here? For now, commit the main transfer.
+    // }
+    // --- End Logging Placeholder ---
+
+
+    // --- Commit Transaction ---
+    if (executeSimpleSQL(db, "COMMIT;")) {
+        success = true; // Only set success if COMMIT is successful
+    } else {
+        // If commit fails, something went very wrong, attempt rollback (though it might also fail)
+        executeSimpleSQL(db, "ROLLBACK;"); 
+    }
+
+    return success;
+}
+
+// ... rest of AuthWalletSystem.cpp ...
