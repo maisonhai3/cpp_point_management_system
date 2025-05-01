@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: cpp_point_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cpp_user
+      POSTGRES_PASSWORD: cpp_password
+      POSTGRES_DB: cpp_point_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - .database_schemas/pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PWD}/pgdata
+      o: bind

@@ -30,3 +30,6 @@
 *.exe
 *.out
 *.app
+
+# Database
+database_schemas/pgdata
