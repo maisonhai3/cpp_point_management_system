@@ -74,7 +74,8 @@ file(GLOB SOURCES
 )
 
 # Main executable
-add_executable(${PROJECT_NAME} ${SOURCES})
+add_executable(${PROJECT_NAME} ${SOURCES}
+        include/models/TransactionRecord.h)
 
 # Include directories for the target (Modern CMake approach)
 target_include_directories(${PROJECT_NAME} PRIVATE
