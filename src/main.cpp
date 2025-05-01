@@ -1,7 +1,7 @@
 #include "../include/AuthWalletSystem.h"
 #include <iostream>
 #include <string>
-#include <limits>
+#include <limits> // Required for numeric_limits
 
 // Function declarations
 void clearInputBuffer();
@@ -13,7 +13,8 @@ void handleRegistration(AuthWalletSystem& system);
 void handleLogin(AuthWalletSystem& system);
 void handlePasswordChange(AuthWalletSystem& system, bool forcedChange = false);
 void showLoggedInMenu(AuthWalletSystem& system);
-void handleViewProfile(AuthWalletSystem& system); // <-- Add prototype
+void handleViewProfile(AuthWalletSystem& system);
+void handleViewBalance(AuthWalletSystem& system); // <-- Add prototype
 
 // Function to clear input buffer
 void clearInputBuffer() {
@@ -288,6 +289,47 @@ void handleViewProfile(AuthWalletSystem& system) {
     std::cin.get(); // Wait for user to press Enter
 }
 
+// Function to handle viewing wallet balance (UC-WALLET-01)
+void handleViewBalance(AuthWalletSystem& system) {
+    std::cout << "\n--- View Wallet Balance ---" << std::endl;
+
+    User* currentUser = system.getCurrentUser();
+
+    if (!currentUser) {
+        std::cout << "Error: You must be logged in to view your balance." << std::endl;
+        // Wait before returning
+        std::cout << "\nPress Enter to return to the menu...";
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); 
+        std::cin.get();
+        return;
+    }
+
+    std::string walletId = currentUser->getWalletId();
+    if (walletId.empty()) {
+         std::cout << "Error: Could not find wallet ID for the current user." << std::endl;
+         // Wait before returning
+         std::cout << "\nPress Enter to return to the menu...";
+         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+         std::cin.get();
+         return;
+    }
+
+    long long balance = system.getWalletBalance(walletId);
+
+    if (balance >= 0) {
+        std::cout << "Your current wallet balance is: " << balance << " points." << std::endl;
+    } else {
+        // getWalletBalance returns -1 on error or if not found
+        std::cout << "Could not retrieve wallet balance. The wallet might not exist or an error occurred." << std::endl;
+    }
+
+    std::cout << "\nPress Enter to return to the menu...";
+    // Need to handle potential leftover newline from previous getline if called directly after another getline action
+    // Using ignore here should be safer
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); 
+    std::cin.get(); // Wait for user to press Enter
+}
+
 
 // Menu shown after successful login
 void showLoggedInMenu(AuthWalletSystem& system) {
@@ -299,14 +341,13 @@ void showLoggedInMenu(AuthWalletSystem& system) {
         std::cout << "Welcome, " << system.getCurrentUser()->getFullName() << "!" << std::endl;
         std::cout << "----------------------" << std::endl;
         std::cout << "1. View Profile (UC-INFO-01)" << std::endl;
-        std::cout << "7. Logout (UC-AUTH-04)" << std::endl;
+        std::cout << "2. View Balance (UC-WALLET-01)" << std::endl; // <-- Add menu option
         // TODO: Add other options based on role
-        // 2. View Balance (UC-WALLET-01)
         // 3. View Transactions (UC-WALLET-02)
         // 4. Transfer Points (UC-WALLET-03)
         // 5. Edit Profile (UC-INFO-02)
         // 6. Change Password (UC-AUTH-06)
-        // 7. Logout (UC-AUTH-04)
+        std::cout << "7. Logout (UC-AUTH-04)" << std::endl; // <-- Keep logout option
         std::cout << "----------------------" << std::endl;
         std::cout << "Enter your choice (or type 'logout'): ";
         
@@ -314,6 +355,8 @@ void showLoggedInMenu(AuthWalletSystem& system) {
 
         if (choice == "1") {
             handleViewProfile(system);
+        } else if (choice == "2") { // <-- Add case for new option
+            handleViewBalance(system);
         } else if (choice == "logout" || choice == "7") { // Check for logout input
              std::cout << "Logging out..." << std::endl; 
              system.logout(); // Call the implemented logout method which clears currentUser
@@ -321,15 +364,14 @@ void showLoggedInMenu(AuthWalletSystem& system) {
         } 
         // TODO: Add cases for other menu options here
         /* Example structure:
-        else if (choice == "2") {
-            handleViewBalance(system); 
-        } else if (choice == "6") {
+        else if (choice == "6") {
             handlePasswordChange(system, false); // Not forced change
         } 
         */
          else {
              std::cout << "Invalid choice. Please try again." << std::endl;
              std::cout << "Press Enter to continue...";
+             std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear buffer if needed
              std::cin.get(); 
          }
 
@@ -351,7 +393,6 @@ int main() {
         return 1; // Exit with an error code if DB connection fails
     }
 
-
     std::string choice;
     bool running = true;
     
@@ -368,7 +409,7 @@ int main() {
             handleRegistration(system);
         } else if (choice == "2") {
             // Login - This will call showLoggedInMenu if successful
-            handleLogin(system); 
+            handleLogin(system); // Calls showLoggedInMenu if successful
         } else if (choice == "3") {
             // Exit
             std::cout << "Exiting the system. Goodbye!" << std::endl;
@@ -380,7 +421,10 @@ int main() {
          // Add a small pause or clear screen before showing the menu again, unless exiting
         if (running) {
              std::cout << "\nPress Enter to return to the main menu...";
-             // clearInputBuffer(); // Might be needed depending on previous function's last input handling
+             // Handle potential leftover newline depending on previous input function
+             if (std::cin.peek() == '\n') {
+                 std::cin.ignore();
+             }
              std::cin.get(); 
         }
     }

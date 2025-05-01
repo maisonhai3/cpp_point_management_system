@@ -396,9 +396,50 @@ bool AuthWalletSystem::registerUser(const std::string& username, const std::stri
     }
 }
 
-// ... Other method implementations ...
-
-// Getters
 User* AuthWalletSystem::getCurrentUser() const {
     return currentUser.get(); // Return the raw pointer from the unique_ptr
 }
+
+long long AuthWalletSystem::getWalletBalance(const std::string& walletId) {
+    if (!db || walletId.empty()) {
+        std::cerr << "Error: Database not connected or invalid wallet ID." << std::endl;
+        return -1; // Indicate error or not found
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT balance FROM Wallets WHERE wallet_id = ?;";
+    long long balance = -1; // Default to error/not found
+
+    // Prepare the SQL statement
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        return -1;
+    }
+
+    // Bind the walletId parameter
+    if (sqlite3_bind_text(stmt, 1, walletId.c_str(), -1, SQLITE_STATIC) != SQLITE_OK) {
+        std::cerr << "Failed to bind wallet ID: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+
+    // Execute the statement and retrieve the balance
+    int stepResult = sqlite3_step(stmt);
+    if (stepResult == SQLITE_ROW) {
+        balance = sqlite3_column_int64(stmt, 0); // Get balance from the first column
+    } else if (stepResult == SQLITE_DONE) {
+        // No row found, wallet ID likely doesn't exist (or balance is NULL?)
+        // Keep balance as -1
+         std::cerr << "Wallet ID not found: " << walletId << std::endl;
+    } else {
+        std::cerr << "Failed to step statement: " << sqlite3_errmsg(db) << std::endl;
+        // Keep balance as -1
+    }
+
+    // Finalize the statement to release resources
+    sqlite3_finalize(stmt);
+
+    return balance;
+}
+
+// ... adminGetAllUsers, getCurrentUser, isPasswordChangeRequired, etc. ...
