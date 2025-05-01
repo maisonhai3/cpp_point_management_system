@@ -863,3 +863,64 @@ bool AuthWalletSystem::adminCreateUser(const std::string& username, const std::s
     return success;
 }
 
+// Implementation of adminGetAllUsers for UC-INFO-03
+std::vector<User> AuthWalletSystem::adminGetAllUsers() {
+    std::vector<User> users;
+    
+    // Check if current user is an admin
+    if (!currentUser || !currentUser->isAdmin()) {
+        std::cerr << "Error: Only administrators can view all users." << std::endl;
+        return users; // Return empty vector
+    }
+    
+    if (!db) {
+        std::cerr << "Error: Database connection not established!" << std::endl;
+        return users; // Return empty vector
+    }
+    
+    // Prepare SQL statement to retrieve all users - Now with qualified column names
+    const char* sql = "SELECT Users.user_id, Users.username, Users.hashed_password, Users.salt, Users.full_name, "
+                     "Users.contact_info, Users.role, Wallets.wallet_id, Users.password_status FROM Users "
+                     "LEFT JOIN Wallets ON Users.user_id = Wallets.user_id "
+                     "ORDER BY Users.username";
+    
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        return users;
+    }
+    
+    // Execute the query and process the results
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        int userId = sqlite3_column_int(stmt, 0);
+        std::string username = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        std::string hashedPassword = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        std::string salt = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        std::string fullName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        std::string contactInfo = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+        
+        std::string roleStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+        UserRole role = (roleStr == "ADMIN") ? UserRole::ADMIN : UserRole::USER;
+        
+        // Handle null wallet_id
+        std::string walletId = "";
+        if (sqlite3_column_type(stmt, 7) != SQLITE_NULL) {
+            walletId = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+        }
+        
+        std::string pwdStatusStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
+        PasswordStatus pwdStatus = (pwdStatusStr == "AUTO_GENERATED") ? 
+                                   PasswordStatus::AUTO_GENERATED : PasswordStatus::USER_SET;
+        
+        // Create user object and add to vector
+        User user(userId, username, hashedPassword, salt, fullName, contactInfo, 
+                  role, walletId, pwdStatus);
+        users.push_back(user);
+    }
+    
+    // Finalize statement
+    sqlite3_finalize(stmt);
+    
+    return users;
+}
+

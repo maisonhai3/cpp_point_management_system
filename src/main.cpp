@@ -21,6 +21,7 @@ void handleViewProfile(AuthWalletSystem& system);
 void handleViewBalance(AuthWalletSystem& system); // <-- Add prototype
 void handleTransferPoints(AuthWalletSystem& system); // <-- Add prototype
 void handleAdminCreateUser(AuthWalletSystem& system); // Add this declaration
+void handleAdminViewUsers(AuthWalletSystem& system); // Add this declaration
 
 // Function to clear input buffer
 void clearInputBuffer() {
@@ -672,6 +673,57 @@ void handleAdminCreateUser(AuthWalletSystem& system) {
     std::cin.get();
 }
 
+// Function to handle administrator viewing all users (UC-INFO-03)
+void handleAdminViewUsers(AuthWalletSystem& system) {
+    std::cout << "\n=== Admin: View All Users ===\n";
+    
+    // Check if current user is an admin
+    User* currentUser = system.getCurrentUser();
+    if (!currentUser || !currentUser->isAdmin()) {
+        std::cout << "Error: Only administrators can view all users." << std::endl;
+        std::cout << "\nPress Enter to continue...";
+        std::cin.get();
+        return;
+    }
+    
+    // Get all users
+    std::vector<User> users = system.adminGetAllUsers();
+    
+    if (users.empty()) {
+        std::cout << "No users found in the system or you don't have permission to view them." << std::endl;
+    } else {
+        // Display table header
+        std::cout << "\n" << std::left 
+                  << std::setw(5) << "ID" 
+                  << std::setw(20) << "Username" 
+                  << std::setw(30) << "Full Name" 
+                  << std::setw(30) << "Contact Info" 
+                  << std::setw(10) << "Role" 
+                  << std::setw(10) << "Password" << std::endl;
+        std::cout << std::string(105, '-') << std::endl;
+        
+        // Display each user
+        for (const auto& user : users) {
+            std::string roleStr = (user.getRole() == UserRole::ADMIN) ? "ADMIN" : "USER";
+            std::string pwdStatus = (user.getPasswordStatus() == PasswordStatus::AUTO_GENERATED) ? 
+                                     "AUTO" : "SET";
+            
+            std::cout << std::left 
+                      << std::setw(5) << user.getUserId() 
+                      << std::setw(20) << user.getUsername() 
+                      << std::setw(30) << user.getFullName() 
+                      << std::setw(30) << user.getContactInfo() 
+                      << std::setw(10) << roleStr 
+                      << std::setw(10) << pwdStatus << std::endl;
+        }
+        
+        std::cout << "\nTotal users: " << users.size() << std::endl;
+    }
+    
+    std::cout << "\nPress Enter to continue...";
+    std::cin.get();
+}
+
 // Menu shown after successful login
 void showLoggedInMenu(AuthWalletSystem& system) {
     bool loggedIn = true;
@@ -692,10 +744,11 @@ void showLoggedInMenu(AuthWalletSystem& system) {
             std::cout << "----------------------" << std::endl;
             std::cout << "ADMIN OPTIONS:" << std::endl;
             std::cout << "6. Create User Account (UC-AUTH-02)" << std::endl;
+            std::cout << "7. View All Users (UC-INFO-03)" << std::endl;
         }
         
         std::cout << "----------------------" << std::endl;
-        std::cout << "7. Logout (UC-AUTH-04)" << std::endl;
+        std::cout << "9. Logout (UC-AUTH-04)" << std::endl;
         std::cout << "----------------------" << std::endl;
         std::cout << "Enter your choice (or type 'logout'): ";
         
@@ -713,7 +766,9 @@ void showLoggedInMenu(AuthWalletSystem& system) {
             handlePasswordChange(system, false); // Call the password change function (not forced)
         } else if (choice == "6" && system.getCurrentUser()->isAdmin()) {
             handleAdminCreateUser(system); // Admin creating user account
-        } else if (choice == "logout" || choice == "7") {
+        } else if (choice == "7" && system.getCurrentUser()->isAdmin()) {
+            handleAdminViewUsers(system); // Admin viewing all users
+        } else if (choice == "logout" || choice == "9") {
             std::cout << "Logging out..." << std::endl; 
             system.logout(); 
             loggedIn = false; 
