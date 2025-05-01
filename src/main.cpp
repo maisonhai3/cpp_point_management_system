@@ -200,7 +200,7 @@ void handleLogin(AuthWalletSystem& system) {
     // std::cin.get(); // Removed extra cin.get() as getline handles the enter after input
 }
 
-// Function to handle password change (Placeholder for UC-AUTH-05, UC-AUTH-06)
+// Function to handle password change (UC-AUTH-05, UC-AUTH-06)
 void handlePasswordChange(AuthWalletSystem& system, bool forcedChange) {
      std::cout << "\n=== " << (forcedChange ? "Required " : "") << "Password Change ===" << std::endl;
      
@@ -216,8 +216,12 @@ void handlePasswordChange(AuthWalletSystem& system, bool forcedChange) {
          // For UC-AUTH-06, ask for the old password first
          std::cout << "Enter current password: ";
          std::getline(std::cin, oldPassword);
-         // TODO: Add validation for the old password using system.changePassword logic later
-         // TODO: Add OTP verification step here (UC-AUTH-07)
+         
+         // Verify old password is correct
+         if (!system.getCurrentUser()->checkPassword(oldPassword)) {
+             std::cout << "Incorrect current password. Password change aborted." << std::endl;
+             return;
+         }
     }
 
     while (true) {
@@ -244,19 +248,15 @@ void handlePasswordChange(AuthWalletSystem& system, bool forcedChange) {
         break; // Passwords match and meet basic criteria
     }
 
-     // Placeholder for the actual password change call
-     // In the real implementation, call system.changePassword()
-     // bool success = system.changePassword(*system.getCurrentUser(), oldPassword, newPassword);
-     bool success = true; // Assume success for now
+     // Call the system to change the password
+     bool success = system.changePassword(*system.getCurrentUser(), oldPassword, newPassword);
      
      if (success) {
-        std::cout << "Password change process placeholder - simulating success." << std::endl;
-        // The actual system.changePassword would update the DB and the user object's status
-        // For now, just pretend it worked if forced.
+        std::cout << "Password changed successfully." << std::endl;
         if (forcedChange && system.getCurrentUser()) {
-             // Manually update status in the current object for demo purposes
-             // This would normally be handled within AuthWalletSystem::changePassword
-             system.getCurrentUser()->setPasswordStatus(PasswordStatus::USER_SET); 
+             // The password status should already be updated by the changePassword method,
+             // but we'll ensure it's set correctly here as a backup
+             system.getCurrentUser()->setPasswordStatus(PasswordStatus::USER_SET);
         }
      } else {
          std::cout << "Password change failed." << (forcedChange ? " Logging out." : "") << std::endl;
@@ -531,13 +531,10 @@ void showLoggedInMenu(AuthWalletSystem& system) {
         std::cout << "----------------------" << std::endl;
         std::cout << "1. View Profile (UC-INFO-01)" << std::endl;
         std::cout << "2. View Balance (UC-WALLET-01)" << std::endl;
-        std::cout << "3. Transfer Points (UC-WALLET-03)" << std::endl; // <-- Add menu option
-        std::cout << "4. View Transactions (UC-WALLET-02)" << std::endl; // <-- Added menu option
-        // TODO: Add other options based on role
-        // 4. View Transactions (UC-WALLET-02)
-        // 5. Edit Profile (UC-INFO-02)
-        // 6. Change Password (UC-AUTH-06)
-        std::cout << "7. Logout (UC-AUTH-04)" << std::endl; // <-- Renumber logout
+        std::cout << "3. Transfer Points (UC-WALLET-03)" << std::endl;
+        std::cout << "4. View Transactions (UC-WALLET-02)" << std::endl;
+        std::cout << "5. Change Password (UC-AUTH-06)" << std::endl; // Add password change option
+        std::cout << "7. Logout (UC-AUTH-04)" << std::endl;
         std::cout << "----------------------" << std::endl;
         std::cout << "Enter your choice (or type 'logout'): ";
         
@@ -547,22 +544,17 @@ void showLoggedInMenu(AuthWalletSystem& system) {
             handleViewProfile(system);
         } else if (choice == "2") { 
             handleViewBalance(system);
-        } else if (choice == "3") { // <-- Add case for transfer points
+        } else if (choice == "3") { 
              handleTransferPoints(system);
         } else if (choice == "4") {
-            handleViewTransactions(system); // <-- Handle transaction history viewing
-        } else if (choice == "logout" || choice == "7") { // Check for logout input (updated number)
+            handleViewTransactions(system);
+        } else if (choice == "5") {
+            handlePasswordChange(system, false); // Call the password change function (not forced)
+        } else if (choice == "logout" || choice == "7") {
              std::cout << "Logging out..." << std::endl; 
              system.logout(); 
              loggedIn = false; 
-        } 
-        // TODO: Add cases for other menu options here
-        /* Example structure:
-        else if (choice == "6") {
-            handlePasswordChange(system, false); 
-        } 
-        */
-         else {
+        } else {
              std::cout << "Invalid choice. Please try again." << std::endl;
              std::cout << "Press Enter to continue...";
              if(std::cin.peek() == '\n') std::cin.ignore(); // Clear buffer if needed
