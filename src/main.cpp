@@ -299,6 +299,7 @@ void showLoggedInMenu(AuthWalletSystem& system) {
         std::cout << "Welcome, " << system.getCurrentUser()->getFullName() << "!" << std::endl;
         std::cout << "----------------------" << std::endl;
         std::cout << "1. View Profile (UC-INFO-01)" << std::endl;
+        std::cout << "7. Logout (UC-AUTH-04)" << std::endl;
         // TODO: Add other options based on role
         // 2. View Balance (UC-WALLET-01)
         // 3. View Transactions (UC-WALLET-02)
@@ -313,11 +314,11 @@ void showLoggedInMenu(AuthWalletSystem& system) {
 
         if (choice == "1") {
             handleViewProfile(system);
-        } else if (choice == "logout" || choice == "7") { // Example logout option
-             std::cout << "Logging out..." << std::endl;
-             system.logout();
-             loggedIn = false; // Exit the logged-in menu loop
-        }
+        } else if (choice == "logout" || choice == "7") { // Check for logout input
+             std::cout << "Logging out..." << std::endl; 
+             system.logout(); // Call the implemented logout method which clears currentUser
+             loggedIn = false; // Set flag to exit this menu loop
+        } 
         // TODO: Add cases for other menu options here
         /* Example structure:
         else if (choice == "2") {
@@ -336,8 +337,8 @@ void showLoggedInMenu(AuthWalletSystem& system) {
         if (loggedIn) {
             // system("clear"); // or cls
         }
-    }
-     std::cout << "Returning to main menu." << std::endl;
+    } // End of while(loggedIn && system.getCurrentUser()) loop
+     std::cout << "Returning to main menu." << std::endl; // This executes after logout
 }
 
 

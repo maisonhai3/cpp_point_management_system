@@ -13,7 +13,7 @@
 // ... other includes and using directives ...
 
 // Include User model
-#include "../include/models/User.h" 
+#include "../include/models/User.h" // Ensure User is included
 // Include AuthWalletSystem header
 #include "../include/AuthWalletSystem.h" 
 
@@ -141,12 +141,8 @@ bool AuthWalletSystem::isDbConnected() const {
 
 // --- Make sure registerUser calls the member function ---
 void AuthWalletSystem::logout() {
-    if (currentUser) {
-        std::cout << "Logging out user: " << currentUser->getUsername() << std::endl;
-        currentUser.reset(); // Reset the unique_ptr to release the user object
-    } else {
-        std::cout << "No user currently logged in." << std::endl;
-    }
+    currentUser.reset(); // Reset the unique_ptr, effectively deleting the User object and clearing the session state.
+    std::cout << "You have been logged out." << std::endl; 
 }
 
 bool AuthWalletSystem::login(const std::string& username, const std::string& password) {
