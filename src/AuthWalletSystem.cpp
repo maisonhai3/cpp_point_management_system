@@ -1,143 +1,208 @@
+#include "AuthWalletSystem.h" // Include header của lớp
 #include <iostream>
 #include <string>
 #include <vector>
-#include <sqlite3.h> // Header chính của SQLite
-#include <functional> // Cho std::hash (ví dụ hashing đơn giản)
-#include <random>    // Cho tạo salt, wallet id
-#include <chrono>    // Cho tạo wallet id
+#include <functional>
+#include <random>
+#include <chrono>
 #include <algorithm>
+#include <sqlite3.h> // Make sure this is included (likely via AuthWalletSystem.h)
+#include "../include/utils/PasswordUtils.h"
+#include "../include/utils/UUIDGenerator.h" // <-- Add include for UUID generation
 
-// --- Giả định có các hàm trợ giúp này (cần implement thực tế) ---
-std::string generateSalt(size_t length = 16) {
-    // Implement tạo chuỗi ngẫu nhiên an toàn
-    // Ví dụ đơn giản (KHÔNG DÙNG CHO PRODUCTION):
-    std::string s = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    std::shuffle(s.begin(), s.end(), generator);
-    return s.substr(0, length);
+// Remove the free function declaration if it exists here:
+// std::string generateUniqueWalletId(); // <-- REMOVE THIS LINE
+
+
+// --- Implementation of generateUniqueWalletId as a member function ---
+std::string AuthWalletSystem::generateUniqueWalletId() {
+    if (!db) { // Ensure DB is connected
+        std::cerr << "ERROR: Database not connected in generateUniqueWalletId.\n";
+        return ""; // Return empty string indicates error
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql_check = "SELECT COUNT(*) FROM Wallets WHERE wallet_id = ?;";
+    std::string candidateId;
+    int count = 1; // Initialize to 1 to ensure the loop runs at least once
+
+    do {
+        // 1. Generate a new potential ID using the project's UUID generator
+        candidateId = UUIDGenerator::generateUUID();
+
+        // 2. Prepare the SQL statement to check if the ID exists
+        int rc = sqlite3_prepare_v2(db, sql_check, -1, &stmt, nullptr);
+        if (rc != SQLITE_OK) {
+            std::cerr << "ERROR preparing wallet ID check statement: " << sqlite3_errmsg(db) << std::endl;
+            if (stmt) sqlite3_finalize(stmt); // Clean up if partially prepared
+            return ""; // Indicate error
+        }
+
+        // 3. Bind the candidate ID to the prepared statement
+        sqlite3_bind_text(stmt, 1, candidateId.c_str(), -1, SQLITE_STATIC);
+
+        // 4. Execute the statement and check the count
+        count = 0; // Reset count for this check
+        rc = sqlite3_step(stmt);
+
+        if (rc == SQLITE_ROW) {
+            // A row was returned, get the count
+            count = sqlite3_column_int(stmt, 0);
+        } else if (rc != SQLITE_DONE) {
+            // An error occurred during execution (SQLITE_DONE means no rows found, which is good if count is 0)
+            std::cerr << "ERROR executing wallet ID check statement: " << sqlite3_errmsg(db) << std::endl;
+            count = 1; // Force loop retry or indicate error state
+                       // Consider returning "" here as well for critical errors
+        }
+        // else: rc == SQLITE_DONE, meaning ID was not found (count remains 0)
+
+        // 5. Finalize the statement for this iteration
+        sqlite3_finalize(stmt);
+        stmt = nullptr; // Reset for the next potential iteration
+
+    } while (count > 0); // Loop only if the count was greater than 0 (ID already exists)
+
+    // 6. If the loop exits, candidateId is unique
+    return candidateId;
 }
 
-std::string hashPassword(const std::string& password, const std::string& salt) {
-    // Implement hàm băm an toàn (vd: Argon2, bcrypt, hoặc ít nhất là SHA256)
-    // Ví dụ dùng std::hash (RẤT KHÔNG AN TOÀN - CHỈ ĐỂ MINH HỌA):
-    std::hash<std::string> hasher;
-    size_t hashed = hasher(password + salt);
-    return std::to_string(hashed);
+
+// --- Constructor, Destructor, isDbConnected remain the same ---
+AuthWalletSystem::AuthWalletSystem() : db(nullptr), currentUser(nullptr) {
+    std::cout << "Initializing AuthWalletSystem..." << std::endl;
+
+    // Mở kết nối CSDL SQLite
+    // Thay "wallet_app.db" bằng đường dẫn thực tế nếu cần
+    int rc = sqlite3_open("wallet_app.db", &db);
+
+    if (rc != SQLITE_OK) {
+        // Nếu mở lỗi, db sẽ là nullptr hoặc chứa thông tin lỗi
+        std::cerr << "ERROR: Cannot open database: " << sqlite3_errmsg(db) << std::endl;
+        // db có thể vẫn cần được close nếu lỗi xảy ra sau khi cấp phát một phần
+        if (db) {
+           sqlite3_close(db); // Cố gắng đóng
+           db = nullptr;       // Đặt lại là nullptr
+        }
+        // Bạn có thể muốn ném một ngoại lệ ở đây để báo hiệu lỗi khởi tạo nghiêm trọng
+        // throw std::runtime_error("Failed to open database");
+    } else {
+        std::cout << "Database opened successfully: wallet_app.db" << std::endl;
+
+        // Bật kiểm tra khóa ngoại (QUAN TRỌNG!)
+        char* errMsg = nullptr;
+        rc = sqlite3_exec(db, "PRAGMA foreign_keys = ON;", nullptr, nullptr, &errMsg);
+        if (rc != SQLITE_OK) {
+            std::cerr << "ERROR: Failed to enable foreign keys: " << errMsg << std::endl;
+            sqlite3_free(errMsg); // Giải phóng bộ nhớ thông báo lỗi
+            // Xem xét việc đóng CSDL hoặc ném ngoại lệ nếu bật FK là bắt buộc
+            sqlite3_close(db);
+            db = nullptr;
+            // throw std::runtime_error("Failed to enable foreign keys");
+        } else {
+            std::cout << "Foreign key enforcement enabled." << std::endl;
+        }
+    }
 }
 
-std::string generateUniqueWalletId() {
-    // Implement tạo ID duy nhất (ví dụ: "W_" + timestamp + random)
-    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                      std::chrono::system_clock::now().time_since_epoch())
-                      .count();
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    std::uniform_int_distribution<> distrib(1000, 9999);
-    return "W_" + std::to_string(now_ms) + std::to_string(distrib(generator));
+AuthWalletSystem::~AuthWalletSystem() {
+    std::cout << "Destroying AuthWalletSystem..." << std::endl;
+    // Đóng kết nối CSDL nếu nó đã được mở thành công
+    if (db != nullptr) {
+        int rc = sqlite3_close(db);
+        if (rc == SQLITE_BUSY) {
+             std::cerr << "WARNING: Database connection was busy. Could not close immediately." << std::endl;
+             // Có thể bạn còn prepared statement chưa finalize. Cần xử lý triệt để hơn.
+             // Trong ứng dụng đơn giản, lỗi này ít xảy ra nếu code đúng.
+        } else if (rc != SQLITE_OK) {
+            std::cerr << "ERROR: Failed to close database cleanly: " << sqlite3_errmsg(db) << std::endl;
+        } else {
+            std::cout << "Database closed successfully." << std::endl;
+        }
+        // Dù có lỗi hay không, không còn truy cập được db nữa
+        db = nullptr;
+    }
+    // std::unique_ptr<User> currentUser sẽ tự động được giải phóng (nếu nó quản lý User)
 }
 
-// --- Hàm thực hiện Use Case UC-AUTH-01 ---
+bool AuthWalletSystem::isDbConnected() const {
+    return db != nullptr;
+}
 
-bool registerUser() {
-    std::string username, password, confirmPassword, fullName, contactInfo;
+// --- Make sure registerUser calls the member function ---
+bool AuthWalletSystem::registerUser(const std::string& username, const std::string& password,
+                                   const std::string& fullName, const std::string& contactInfo)
+{
+    // --- Bỏ phần mở/đóng CSDL và PRAGMA ở đây ---
 
-    // 1. Nhận Input từ End-user
-    std::cout << "--- Dang Ky Tai Khoan Moi ---\n";
-    std::cout << "Nhap ten dang nhap: ";
-    std::getline(std::cin >> std::ws, username);
-    // Thêm kiểm tra username hợp lệ (không trống, không chứa ký tự đặc biệt...)
+    // *** THÊM KIỂM TRA KẾT NỐI ***
+    if (!isDbConnected()) { // Hoặc if (!db)
+         std::cerr << "Loi: Khong co ket noi CSDL de dang ky!\n";
+         return false;
+    }
 
-    std::cout << "Nhap mat khau: ";
-    std::getline(std::cin >> std::ws, password);
-    // Thêm kiểm tra độ mạnh mật khẩu
-
-    std::cout << "Xac nhan mat khau: ";
+    std::string confirmPassword; // Vẫn cần confirm password
+    std::cout << "Xac nhan mat khau (trong ham registerUser): "; // Có thể bạn muốn tách logic input ra ngoài
     std::getline(std::cin >> std::ws, confirmPassword);
     if (password != confirmPassword) {
         std::cerr << "Loi: Mat khau xac nhan khong khop!\n";
         return false;
     }
 
-    std::cout << "Nhap ho va ten: ";
-    std::getline(std::cin >> std::ws, fullName);
 
-    std::cout << "Nhap Email hoac SĐT: ";
-    std::getline(std::cin >> std::ws, contactInfo);
-
-    // 2. Kết nối CSDL SQLite
-    sqlite3* db;
-    int rc = sqlite3_open("wallet_app.db", &db); // Mở hoặc tạo file DB
-    if (rc != SQLITE_OK) {
-        std::cerr << "Loi khong the mo CSDL: " << sqlite3_errmsg(db) << std::endl;
-        sqlite3_close(db); // Dù lỗi cũng nên thử đóng
-        return false;
-    }
-    std::cout << "Mo CSDL thanh cong.\n";
-
-    // Bật kiểm tra khóa ngoại (QUAN TRỌNG!)
-    char* errMsg = nullptr;
-    rc = sqlite3_exec(db, "PRAGMA foreign_keys = ON;", nullptr, nullptr, &errMsg);
-    if (rc != SQLITE_OK) {
-        std::cerr << "Loi bat khoa ngoai: " << errMsg << std::endl;
-        sqlite3_free(errMsg);
-        sqlite3_close(db);
-        return false;
-    }
-
-
-    // 3. Kiểm tra Username tồn tại
+    // 3. Kiểm tra Username tồn tại (Dùng biến thành viên 'db')
     sqlite3_stmt* stmt_check;
     const char* sql_check = "SELECT COUNT(*) FROM Users WHERE username = ?;";
-    rc = sqlite3_prepare_v2(db, sql_check, -1, &stmt_check, nullptr);
+    int rc = sqlite3_prepare_v2(db, sql_check, -1, &stmt_check, nullptr); // Sử dụng 'db' của lớp
     if (rc != SQLITE_OK) {
         std::cerr << "Loi chuan bi truy van kiem tra username: " << sqlite3_errmsg(db) << std::endl;
-        sqlite3_close(db);
+        // Không cần close db ở đây nữa
         return false;
     }
 
-    // Gán giá trị username vào placeholder '?' (index 1)
-    sqlite3_bind_text(stmt_check, 1, username.c_str(), -1, SQLITE_STATIC);
-
-    int user_count = 0;
-    if (sqlite3_step(stmt_check) == SQLITE_ROW) { // Lấy kết quả
-        user_count = sqlite3_column_int(stmt_check, 0);
-    } else {
-         std::cerr << "Loi thuc thi truy van kiem tra username: " << sqlite3_errmsg(db) << std::endl;
-         sqlite3_finalize(stmt_check);
-         sqlite3_close(db);
+    // ... (Phần bind, step, finalize của kiểm tra username như cũ, dùng biến 'db') ...
+     sqlite3_bind_text(stmt_check, 1, username.c_str(), -1, SQLITE_STATIC);
+     int user_count = 0;
+     if (sqlite3_step(stmt_check) == SQLITE_ROW) {
+         user_count = sqlite3_column_int(stmt_check, 0);
+     } else {
+          std::cerr << "Loi thuc thi truy van kiem tra username: " << sqlite3_errmsg(db) << std::endl;
+          sqlite3_finalize(stmt_check);
+          return false;
+     }
+     sqlite3_finalize(stmt_check);
+     if (user_count > 0) {
+         std::cerr << "Loi: Ten dang nhap '" << username << "' da ton tai!\n";
          return false;
-    }
-    sqlite3_finalize(stmt_check); // Giải phóng statement
+     }
 
-    if (user_count > 0) {
-        std::cerr << "Loi: Ten dang nhap '" << username << "' da ton tai!\n";
-        sqlite3_close(db);
-        return false;
-    }
 
     // 4. Chuẩn bị Dữ liệu User và Wallet
-    std::string salt = generateSalt();
-    std::string hashedPassword = hashPassword(password, salt);
-    std::string walletId = generateUniqueWalletId();
-    std::string userRole = "USER"; // Mặc định
-    std::string passStatus = "USER_SET"; // Người dùng tự đặt
+    std::string salt = PasswordUtils::generateSalt();
+    std::string hashedPassword = PasswordUtils::hashPassword(password, salt);
+    std::string walletId = generateUniqueWalletId(); // <-- Now calls the member function
+    if (walletId.empty()) { // Check if ID generation failed
+        std::cerr << "Loi: Khong the tao Wallet ID duy nhat!\n";
+        return false; // Abort registration if we couldn't get a wallet ID
+    }
+    std::string userRole = "USER";
+    std::string passStatus = "USER_SET";
 
-    // 5. Bắt đầu Transaction
+    // 5. Bắt đầu Transaction (Dùng biến thành viên 'db')
+    char* errMsg = nullptr;
     rc = sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, &errMsg);
     if (rc != SQLITE_OK) {
         std::cerr << "Loi bat dau transaction: " << errMsg << std::endl;
         sqlite3_free(errMsg);
-        sqlite3_close(db);
         return false;
     }
 
     sqlite3_stmt* stmt_insert_user = nullptr;
     sqlite3_stmt* stmt_insert_wallet = nullptr;
     bool success = true;
-    long long last_user_id = -1; // Lưu user_id vừa insert
+    long long last_user_id = -1;
 
-    // 6. Insert User
+    // 6. Insert User (Dùng biến thành viên 'db')
+    // ... (Code prepare, bind, step, finalize cho insert user như cũ, dùng biến 'db') ...
     const char* sql_insert_user = "INSERT INTO Users (username, hashed_password, salt, full_name, contact_info, role, password_status) VALUES (?, ?, ?, ?, ?, ?, ?);";
     rc = sqlite3_prepare_v2(db, sql_insert_user, -1, &stmt_insert_user, nullptr);
     if (rc == SQLITE_OK) {
@@ -153,23 +218,26 @@ bool registerUser() {
             std::cerr << "Loi insert User: " << sqlite3_errmsg(db) << std::endl;
             success = false;
         } else {
-            last_user_id = sqlite3_last_insert_rowid(db); // Lấy ID của user vừa insert
+            last_user_id = sqlite3_last_insert_rowid(db);
             std::cout << "Them User thanh cong (ID: " << last_user_id << ").\n";
         }
     } else {
         std::cerr << "Loi chuan bi insert User: " << sqlite3_errmsg(db) << std::endl;
         success = false;
     }
-    sqlite3_finalize(stmt_insert_user); // Luôn giải phóng statement
+    sqlite3_finalize(stmt_insert_user);
 
-    // 7. Insert Wallet (chỉ thực hiện nếu Insert User thành công)
-    if (success && last_user_id != -1) {
+
+    // 7. Insert Wallet (Dùng biến thành viên 'db')
+    // ... (Code prepare, bind, step, finalize cho insert wallet như cũ, dùng biến 'db') ...
+     if (success && last_user_id != -1) {
         const char* sql_insert_wallet = "INSERT INTO Wallets (wallet_id, user_id, balance) VALUES (?, ?, ?);";
         rc = sqlite3_prepare_v2(db, sql_insert_wallet, -1, &stmt_insert_wallet, nullptr);
         if (rc == SQLITE_OK) {
             long long initialBalance = 0;
+            // Use the generated walletId here
             sqlite3_bind_text(stmt_insert_wallet, 1, walletId.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_int64(stmt_insert_wallet, 2, last_user_id); // Dùng user_id vừa lấy
+            sqlite3_bind_int64(stmt_insert_wallet, 2, last_user_id);
             sqlite3_bind_int64(stmt_insert_wallet, 3, initialBalance);
 
             if (sqlite3_step(stmt_insert_wallet) != SQLITE_DONE) {
@@ -183,18 +251,23 @@ bool registerUser() {
              success = false;
         }
         sqlite3_finalize(stmt_insert_wallet);
-    } else {
-        success = false; // Đảm bảo không commit nếu User insert lỗi hoặc không lấy được ID
+    } else if (last_user_id == -1 && success) { // Trường hợp insert user thành công nhưng không lấy được ID
+         std::cerr << "Loi: Khong lay duoc User ID sau khi insert.\n";
+         success = false;
+    }
+     else {
+        success = false;
     }
 
-    // 8. Commit hoặc Rollback Transaction
-    if (success) {
+
+    // 8. Commit hoặc Rollback Transaction (Dùng biến thành viên 'db')
+    // ... (Code commit/rollback như cũ, dùng biến 'db') ...
+     if (success) {
         rc = sqlite3_exec(db, "COMMIT;", nullptr, nullptr, &errMsg);
         if (rc != SQLITE_OK) {
             std::cerr << "Loi commit transaction: " << errMsg << std::endl;
             sqlite3_free(errMsg);
-            // Dù commit lỗi thì dữ liệu cũng có thể đã bị rollback bởi CSDL
-            success = false; // Đánh dấu là thất bại
+            success = false;
         } else {
             std::cout << "Transaction committed.\n";
         }
@@ -209,9 +282,7 @@ bool registerUser() {
          }
     }
 
-    // 9. Đóng kết nối CSDL
-    sqlite3_close(db);
-    std::cout << "Dong CSDL.\n";
+    // --- Bỏ phần đóng CSDL ở đây ---
 
     // 10. Thông báo kết quả
     if (success) {
