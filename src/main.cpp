@@ -20,6 +20,7 @@ void showLoggedInMenu(AuthWalletSystem& system);
 void handleViewProfile(AuthWalletSystem& system);
 void handleViewBalance(AuthWalletSystem& system); // <-- Add prototype
 void handleTransferPoints(AuthWalletSystem& system); // <-- Add prototype
+void handleAdminCreateUser(AuthWalletSystem& system); // Add this declaration
 
 // Function to clear input buffer
 void clearInputBuffer() {
@@ -520,6 +521,137 @@ void handleViewTransactions(AuthWalletSystem& system) {
     std::cin.get();
 }
 
+// Function to handle administrator creating a user account (UC-AUTH-02)
+void handleAdminCreateUser(AuthWalletSystem& system) {
+    std::cout << "\n=== Admin: Create User Account ===\n";
+    
+    // Check if current user is an admin
+    User* currentUser = system.getCurrentUser();
+    if (!currentUser || !currentUser->isAdmin()) {
+        std::cout << "Error: Only administrators can create user accounts." << std::endl;
+        std::cout << "\nPress Enter to continue...";
+        if (std::cin.peek() == '\n') std::cin.ignore();
+        std::cin.get();
+        return;
+    }
+    
+    std::string username, fullName, contactInfo, password, confirmPassword;
+    bool generateRandomPassword = false;
+    
+    // Get username
+    while (true) {
+        std::cout << "Enter username for new user: ";
+        std::getline(std::cin, username);
+        
+        if (username.empty()) {
+            std::cout << "Username cannot be empty. Please try again." << std::endl;
+            continue;
+        }
+        
+        // Check for spaces in username
+        if (username.find(' ') != std::string::npos) {
+            std::cout << "Username cannot contain spaces. Please try again." << std::endl;
+            continue;
+        }
+        
+        break;
+    }
+    
+    // Get full name
+    while (true) {
+        std::cout << "Enter full name for new user: ";
+        std::getline(std::cin, fullName);
+        
+        if (fullName.empty()) {
+            std::cout << "Full name cannot be empty. Please try again." << std::endl;
+            continue;
+        }
+        
+        break;
+    }
+    
+    // Get contact info
+    while (true) {
+        std::cout << "Enter email or phone number for new user: ";
+        std::getline(std::cin, contactInfo);
+        
+        if (contactInfo.empty()) {
+            std::cout << "Contact info cannot be empty. Please try again." << std::endl;
+            continue;
+        }
+        
+        if (!isValidContactInfo(contactInfo)) {
+            std::cout << "Invalid email or phone format. Please try again." << std::endl;
+            continue;
+        }
+        
+        break;
+    }
+    
+    // Ask if admin wants to generate a random password
+    std::string randomChoice;
+    while (true) {
+        std::cout << "Generate random password? (y/n): ";
+        std::getline(std::cin, randomChoice);
+        
+        if (randomChoice == "y" || randomChoice == "Y") {
+            generateRandomPassword = true;
+            break;
+        } else if (randomChoice == "n" || randomChoice == "N") {
+            generateRandomPassword = false;
+            
+            // Get password
+            while (true) {
+                std::cout << "Enter password for new user: ";
+                std::getline(std::cin, password);
+                
+                if (password.empty()) {
+                    std::cout << "Password cannot be empty. Please try again." << std::endl;
+                    continue;
+                }
+                
+                if (password.length() < 6) {
+                    std::cout << "Password must be at least 6 characters long. Please try again." << std::endl;
+                    continue;
+                }
+                
+                // Confirm password
+                std::cout << "Confirm password: ";
+                std::getline(std::cin, confirmPassword);
+                
+                if (password != confirmPassword) {
+                    std::cout << "Passwords do not match. Please try again." << std::endl;
+                    continue;
+                }
+                
+                break;
+            }
+            
+            break;
+        } else {
+            std::cout << "Invalid choice. Please enter 'y' or 'n'." << std::endl;
+        }
+    }
+    
+    // Create the user
+    bool success = system.adminCreateUser(username, fullName, contactInfo, generateRandomPassword, password);
+    
+    if (success) {
+        std::cout << "\n*** User account created successfully! ***" << std::endl;
+        std::cout << "Username: " << username << std::endl;
+        if (generateRandomPassword) {
+            std::cout << "Auto-generated password: " << password << std::endl;
+            std::cout << "NOTE: The user will be required to change this password on first login." << std::endl;
+        }
+    } else {
+        std::cout << "\n*** Failed to create user account. ***" << std::endl;
+    }
+    
+    std::cout << "\nPress Enter to continue...";
+    if (std::cin.peek() == '\n') std::cin.ignore();
+    std::cin.get();
+}
+
 // Menu shown after successful login
 void showLoggedInMenu(AuthWalletSystem& system) {
     bool loggedIn = true;
@@ -533,7 +665,16 @@ void showLoggedInMenu(AuthWalletSystem& system) {
         std::cout << "2. View Balance (UC-WALLET-01)" << std::endl;
         std::cout << "3. Transfer Points (UC-WALLET-03)" << std::endl;
         std::cout << "4. View Transactions (UC-WALLET-02)" << std::endl;
-        std::cout << "5. Change Password (UC-AUTH-06)" << std::endl; // Add password change option
+        std::cout << "5. Change Password (UC-AUTH-06)" << std::endl;
+        
+        // Display admin options if user is an admin
+        if (system.getCurrentUser()->isAdmin()) {
+            std::cout << "----------------------" << std::endl;
+            std::cout << "ADMIN OPTIONS:" << std::endl;
+            std::cout << "6. Create User Account (UC-AUTH-02)" << std::endl;
+        }
+        
+        std::cout << "----------------------" << std::endl;
         std::cout << "7. Logout (UC-AUTH-04)" << std::endl;
         std::cout << "----------------------" << std::endl;
         std::cout << "Enter your choice (or type 'logout'): ";
@@ -545,21 +686,23 @@ void showLoggedInMenu(AuthWalletSystem& system) {
         } else if (choice == "2") { 
             handleViewBalance(system);
         } else if (choice == "3") { 
-             handleTransferPoints(system);
+            handleTransferPoints(system);
         } else if (choice == "4") {
             handleViewTransactions(system);
         } else if (choice == "5") {
             handlePasswordChange(system, false); // Call the password change function (not forced)
+        } else if (choice == "6" && system.getCurrentUser()->isAdmin()) {
+            handleAdminCreateUser(system); // Admin creating user account
         } else if (choice == "logout" || choice == "7") {
-             std::cout << "Logging out..." << std::endl; 
-             system.logout(); 
-             loggedIn = false; 
+            std::cout << "Logging out..." << std::endl; 
+            system.logout(); 
+            loggedIn = false; 
         } else {
-             std::cout << "Invalid choice. Please try again." << std::endl;
-             std::cout << "Press Enter to continue...";
-             if(std::cin.peek() == '\n') std::cin.ignore(); // Clear buffer if needed
-             std::cin.get(); 
-         }
+            std::cout << "Invalid choice. Please try again." << std::endl;
+            std::cout << "Press Enter to continue...";
+            if(std::cin.peek() == '\n') std::cin.ignore(); // Clear buffer if needed
+            std::cin.get(); 
+        }
 
         // Small pause or clear screen before showing menu again if still logged in
         if (loggedIn) {
@@ -608,3 +751,4 @@ int main() {
     
     return 0;
 }
+

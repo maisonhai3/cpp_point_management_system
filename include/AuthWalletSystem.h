@@ -44,6 +44,11 @@ public:
     std::vector<TransactionRecord> getTransactionHistory(const std::string& walletId); // <-- Add history declaration
     std::vector<User> adminGetAllUsers();
 
+    // Admin operations
+    bool adminCreateUser(const std::string& username, const std::string& fullName, 
+                        const std::string& contactInfo, bool generateRandomPassword, 
+                        std::string& password);
+
     // Getters
     User* getCurrentUser() const;
     

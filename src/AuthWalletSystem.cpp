@@ -690,3 +690,163 @@ bool AuthWalletSystem::changePassword(const User& user, const std::string& oldPw
     sqlite3_finalize(stmt);
     return success;
 }
+
+// Implementation of adminCreateUser for UC-AUTH-02
+bool AuthWalletSystem::adminCreateUser(const std::string& username, const std::string& fullName,
+                                     const std::string& contactInfo, bool generateRandomPassword,
+                                     std::string& password) {
+    if (!db) {
+        std::cerr << "Database connection not established!" << std::endl;
+        return false;
+    }
+    
+    // Check if current user is an admin
+    if (!currentUser || !currentUser->isAdmin()) {
+        std::cerr << "Error: Only administrators can create user accounts." << std::endl;
+        return false;
+    }
+    
+    // Check if username already exists
+    sqlite3_stmt* stmt_check;
+    const char* sql_check = "SELECT COUNT(*) FROM Users WHERE username = ?;";
+    int rc = sqlite3_prepare_v2(db, sql_check, -1, &stmt_check, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Error preparing username check query: " << sqlite3_errmsg(db) << std::endl;
+        return false;
+    }
+    
+    sqlite3_bind_text(stmt_check, 1, username.c_str(), -1, SQLITE_STATIC);
+    int user_count = 0;
+    if (sqlite3_step(stmt_check) == SQLITE_ROW) {
+        user_count = sqlite3_column_int(stmt_check, 0);
+    } else {
+        std::cerr << "Error executing username check query: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt_check);
+        return false;
+    }
+    sqlite3_finalize(stmt_check);
+    
+    if (user_count > 0) {
+        std::cerr << "Error: Username '" << username << "' already exists!" << std::endl;
+        return false;
+    }
+    
+    // Generate random password if requested
+    std::string salt;
+    std::string hashedPassword;
+    std::string passwordStatus;
+    
+    if (generateRandomPassword) {
+        // Generate a random password (8 characters)
+        const std::string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+        std::random_device rd;
+        std::mt19937 generator(rd());
+        std::uniform_int_distribution<> distribution(0, chars.size() - 1);
+        
+        password.clear();
+        for (int i = 0; i < 8; ++i) {
+            password += chars[distribution(generator)];
+        }
+        
+        passwordStatus = "AUTO_GENERATED";
+    } else {
+        // Use the provided password
+        passwordStatus = "USER_SET";
+    }
+    
+    // Generate salt and hash the password
+    salt = PasswordUtils::generateSalt();
+    hashedPassword = PasswordUtils::hashPassword(password, salt);
+    
+    // Generate a wallet ID
+    std::string walletId = generateUniqueWalletId();
+    if (walletId.empty()) {
+        std::cerr << "Error: Could not generate unique wallet ID!" << std::endl;
+        return false;
+    }
+    
+    // Begin transaction
+    char* errMsg = nullptr;
+    rc = sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Error starting transaction: " << errMsg << std::endl;
+        sqlite3_free(errMsg);
+        return false;
+    }
+    
+    // Insert user
+    sqlite3_stmt* stmt_insert_user = nullptr;
+    const char* sql_insert_user = "INSERT INTO Users (username, hashed_password, salt, full_name, contact_info, role, password_status) VALUES (?, ?, ?, ?, ?, ?, ?);";
+    
+    rc = sqlite3_prepare_v2(db, sql_insert_user, -1, &stmt_insert_user, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Error preparing user insert statement: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+    
+    sqlite3_bind_text(stmt_insert_user, 1, username.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt_insert_user, 2, hashedPassword.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt_insert_user, 3, salt.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt_insert_user, 4, fullName.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt_insert_user, 5, contactInfo.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt_insert_user, 6, "USER", -1, SQLITE_STATIC); // Always creating USER role
+    sqlite3_bind_text(stmt_insert_user, 7, passwordStatus.c_str(), -1, SQLITE_STATIC);
+    
+    bool success = true;
+    long long last_user_id = -1;
+    
+    if (sqlite3_step(stmt_insert_user) != SQLITE_DONE) {
+        std::cerr << "Error inserting user: " << sqlite3_errmsg(db) << std::endl;
+        success = false;
+    } else {
+        last_user_id = sqlite3_last_insert_rowid(db);
+        std::cout << "User created successfully (ID: " << last_user_id << ")." << std::endl;
+    }
+    sqlite3_finalize(stmt_insert_user);
+    
+    // Insert wallet if user creation was successful
+    if (success && last_user_id != -1) {
+        sqlite3_stmt* stmt_insert_wallet = nullptr;
+        const char* sql_insert_wallet = "INSERT INTO Wallets (wallet_id, user_id, balance) VALUES (?, ?, ?);";
+        
+        rc = sqlite3_prepare_v2(db, sql_insert_wallet, -1, &stmt_insert_wallet, nullptr);
+        if (rc == SQLITE_OK) {
+            long long initialBalance = 0; // Start with zero balance
+            
+            sqlite3_bind_text(stmt_insert_wallet, 1, walletId.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_int64(stmt_insert_wallet, 2, last_user_id);
+            sqlite3_bind_int64(stmt_insert_wallet, 3, initialBalance);
+            
+            if (sqlite3_step(stmt_insert_wallet) != SQLITE_DONE) {
+                std::cerr << "Error inserting wallet: " << sqlite3_errmsg(db) << std::endl;
+                success = false;
+            } else {
+                std::cout << "Wallet created successfully (ID: " << walletId << ")." << std::endl;
+            }
+        } else {
+            std::cerr << "Error preparing wallet insert statement: " << sqlite3_errmsg(db) << std::endl;
+            success = false;
+        }
+        sqlite3_finalize(stmt_insert_wallet);
+    }
+    
+    // Commit or rollback transaction
+    if (success) {
+        rc = sqlite3_exec(db, "COMMIT;", nullptr, nullptr, &errMsg);
+        if (rc != SQLITE_OK) {
+            std::cerr << "Error committing transaction: " << errMsg << std::endl;
+            sqlite3_free(errMsg);
+            success = false;
+        }
+    } else {
+        std::cerr << "Error encountered, rolling back transaction..." << std::endl;
+        rc = sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, &errMsg);
+        if (rc != SQLITE_OK) {
+            std::cerr << "Error rolling back transaction: " << errMsg << std::endl;
+            sqlite3_free(errMsg);
+        }
+    }
+    
+    return success;
+}
