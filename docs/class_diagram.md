@@ -36,7 +36,8 @@ classDiagram
     class AuthWalletSystem {
         -User* currentUser
         -DBConnection* dbConnection // Đối tượng quản lý kết nối DB
-        +registerUser(username, pwd, name, contact) bool
+        +registerUser(username: string, password: string, fullName: string, contactInfo: string) bool
+        // Khi đăng ký thành công, tự động tạo Wallet mới cho User
         +login(username, password) bool
         +logout() void
         +getUserInfo(username) User
