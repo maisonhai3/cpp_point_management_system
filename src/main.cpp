@@ -11,8 +11,9 @@ bool isValidContactInfo(const std::string& contactInfo);
 void displayWelcome();
 void handleRegistration(AuthWalletSystem& system);
 void handleLogin(AuthWalletSystem& system);
-void handlePasswordChange(AuthWalletSystem& system, bool forcedChange = false); // Placeholder added
-void showLoggedInMenu(AuthWalletSystem& system); // Placeholder added
+void handlePasswordChange(AuthWalletSystem& system, bool forcedChange = false);
+void showLoggedInMenu(AuthWalletSystem& system);
+void handleViewProfile(AuthWalletSystem& system); // <-- Add prototype
 
 // Function to clear input buffer
 void clearInputBuffer() {
@@ -260,27 +261,83 @@ void handlePasswordChange(AuthWalletSystem& system, bool forcedChange) {
      }
 }
 
-// Placeholder for the main menu shown after successful login
-void showLoggedInMenu(AuthWalletSystem& system) {
-    std::cout << "\n--- Logged In Menu ---" << std::endl;
-    // TODO: Implement menu based on user role (EndUser/Admin)
-    // Example options:
-    // 1. View Balance (UC-WALLET-01)
-    // 2. View Transactions (UC-WALLET-02)
-    // 3. Transfer Points (UC-WALLET-03)
-    // 4. View Profile (UC-INFO-01)
-    // 5. Edit Profile (UC-INFO-02)
-    // 6. Change Password (UC-AUTH-06)
-    // 7. Logout (UC-AUTH-04)
-    // If Admin:
-    // 8. View All Users (UC-INFO-03)
-    // 9. Create User (UC-AUTH-02) 
-    // 10. Edit Other User (UC-INFO-04) 
+// Function to handle viewing user profile (UC-INFO-01)
+void handleViewProfile(AuthWalletSystem& system) {
+    std::cout << "\n--- Your Profile Information ---" << std::endl;
+    
+    User* currentUser = system.getCurrentUser();
+    
+    if (currentUser) {
+        std::cout << "Username:     " << currentUser->getUsername() << std::endl;
+        std::cout << "Full Name:    " << currentUser->getFullName() << std::endl;
+        std::cout << "Contact Info: " << currentUser->getContactInfo() << std::endl;
+        
+        // Convert UserRole enum to string for display
+        std::string roleStr = (currentUser->getRole() == UserRole::ADMIN) ? "Administrator" : "End-User";
+        std::cout << "Role:         " << roleStr << std::endl;
+        
+        std::cout << "Wallet ID:    " << currentUser->getWalletId() << std::endl;
+    } else {
+        // This case should ideally not happen if called from showLoggedInMenu
+        std::cout << "Error: Could not retrieve user information. Please log in again." << std::endl;
+    }
+    
+    std::cout << "\nPress Enter to return to the menu...";
+    // std::cin.get(); // Might consume the newline from previous input, use ignore
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear buffer before waiting
+    std::cin.get(); // Wait for user to press Enter
+}
 
-    std::cout << "Post Logged-in features not implemented yet." << std::endl;
-    std::cout << "You will be logged out." << std::endl;
-    std::cout << "Logging out..." << std::endl;
-    system.logout(); // Automatically log out for now
+
+// Menu shown after successful login
+void showLoggedInMenu(AuthWalletSystem& system) {
+    bool loggedIn = true;
+    std::string choice;
+
+    while(loggedIn && system.getCurrentUser()) { // Check if still logged in
+        std::cout << "\n--- Logged In Menu ---" << std::endl;
+        std::cout << "Welcome, " << system.getCurrentUser()->getFullName() << "!" << std::endl;
+        std::cout << "----------------------" << std::endl;
+        std::cout << "1. View Profile (UC-INFO-01)" << std::endl;
+        // TODO: Add other options based on role
+        // 2. View Balance (UC-WALLET-01)
+        // 3. View Transactions (UC-WALLET-02)
+        // 4. Transfer Points (UC-WALLET-03)
+        // 5. Edit Profile (UC-INFO-02)
+        // 6. Change Password (UC-AUTH-06)
+        // 7. Logout (UC-AUTH-04)
+        std::cout << "----------------------" << std::endl;
+        std::cout << "Enter your choice (or type 'logout'): ";
+        
+        std::getline(std::cin, choice);
+
+        if (choice == "1") {
+            handleViewProfile(system);
+        } else if (choice == "logout" || choice == "7") { // Example logout option
+             std::cout << "Logging out..." << std::endl;
+             system.logout();
+             loggedIn = false; // Exit the logged-in menu loop
+        }
+        // TODO: Add cases for other menu options here
+        /* Example structure:
+        else if (choice == "2") {
+            handleViewBalance(system); 
+        } else if (choice == "6") {
+            handlePasswordChange(system, false); // Not forced change
+        } 
+        */
+         else {
+             std::cout << "Invalid choice. Please try again." << std::endl;
+             std::cout << "Press Enter to continue...";
+             std::cin.get(); 
+         }
+
+        // Small pause or clear screen before showing menu again if still logged in
+        if (loggedIn) {
+            // system("clear"); // or cls
+        }
+    }
+     std::cout << "Returning to main menu." << std::endl;
 }
 
 
@@ -309,23 +366,21 @@ int main() {
             // Register
             handleRegistration(system);
         } else if (choice == "2") {
-            // Login
-            handleLogin(system);
+            // Login - This will call showLoggedInMenu if successful
+            handleLogin(system); 
         } else if (choice == "3") {
             // Exit
             std::cout << "Exiting the system. Goodbye!" << std::endl;
             running = false;
         } else {
             std::cout << "Invalid choice. Please try again." << std::endl;
-            // std::cout << "Press Enter to continue..."; // Redundant due to loop
-            // std::cin.get(); // Redundant
         }
         
          // Add a small pause or clear screen before showing the menu again, unless exiting
         if (running) {
-             // std::cout << "\nPress Enter to return to the main menu...";
-             // clearInputBuffer(); // Clear buffer before next getline
-             // std::cin.get(); 
+             std::cout << "\nPress Enter to return to the main menu...";
+             // clearInputBuffer(); // Might be needed depending on previous function's last input handling
+             std::cin.get(); 
         }
     }
     
